@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<config>
+    <navigation>
+        <import-export>
+            <pages>
+                <import>
+                    <pages>
+                        <import-job-create>
+                            <label>Create Import Job</label>
+                            <title>Create Import Job</title>
+                            <bundle>data-exchange</bundle>
+                            <controller>job</controller>
+                            <action>create</action>
+                            <visible>0</visible>
+                        </import-job-create>
+                        <import-job-upload>
+                            <label>Upload CSV</label>
+                            <title>Upload CSV</title>
+                            <bundle>data-exchange</bundle>
+                            <controller>job</controller>
+                            <action>upload</action>
+                            <visible>0</visible>
+                        </import-job-upload>
+                    </pages>
+                </import>
+                <export>
+                    <label>Export</label>
+                    <title>Export</title>
+                    <bundle>data-exchange</bundle>
+                    <controller>export</controller>
+                    <action>index</action>
+                </export>
+            </pages>
+        </import-export>
+    </navigation>
+</config>

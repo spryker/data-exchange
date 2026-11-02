@@ -1,0 +1,87 @@
+{% extends '@Gui/Layout/layout.twig' %}
+
+{% set widget_title = 'Run' | trans ~ ' #' ~ jobRun.idImportJobRun ~ ' ' ~ 'Details' | trans %}
+
+{% block head_title widget_title %}
+{% block section_title widget_title %}
+
+{% block action %}
+    {{ backActionButton(url('/data-exchange/run/index', {idImportJob: jobRun.fkImportJob}), 'Back to Runs' | trans) }}
+{% endblock %}
+
+{% block content %}
+    {% embed '@Gui/Partials/widget.twig' with { widget_title: 'Run Summary' | trans } %}
+        {% block widget_content %}
+            <table class="table">
+                <tr>
+                    <th>{{ 'Status' | trans }}</th>
+                    <td>
+                        <span class="label label-{% if jobRun.status == 'done' %}success{% elseif jobRun.status == 'failed' %}danger{% elseif jobRun.status == 'processing' %}warning{% else %}default{% endif %}">
+                            {{ jobRun.status | trans }}
+                        </span>
+                    </td>
+                </tr>
+                <tr>
+                    <th>{{ 'Total Processed Lines' | trans }}</th>
+                    <td>{{ jobRun.numberOfProcessedLines }}</td>
+                </tr>
+                <tr>
+                    <th>{{ 'Successfully Processed Lines' | trans }}</th>
+                    <td>{{ jobRun.numberOfSuccessfullyProcessedLines }}</td>
+                </tr>
+                <tr>
+                    <th>{{ 'Failed Lines' | trans }}</th>
+                    <td>{{ jobRun.numberOfFailedLines }}</td>
+                </tr>
+                <tr>
+                    <th>{{ 'Import Started At' | trans }}</th>
+                    <td>{{ jobRun.importStartedAt ?: '-' }}</td>
+                </tr>
+                <tr>
+                    <th>{{ 'Import Finished At' | trans }}</th>
+                    <td>{{ jobRun.importFinishedAt ?: '-' }}</td>
+                </tr>
+                <tr>
+                    <th>{{ 'Uploaded At' | trans }}</th>
+                    <td>{{ jobRun.createdAt }}</td>
+                </tr>
+                {% if jobRun.fileInfo %}
+                    <tr>
+                        <th>{{ 'Original File' | trans }}</th>
+                        <td>{{ jobRun.fileInfo.originalFileName }}</td>
+                    </tr>
+                {% endif %}
+            </table>
+        {% endblock %}
+    {% endembed %}
+
+    {% if errorCount > 0 %}
+        {% embed '@Gui/Partials/widget.twig' with { widget_title: 'Import Errors' | trans ~ ' (' ~ errorCount ~ ')' } %}
+            {% block widget_content %}
+                {% if showErrorsInline and inlineErrors is not null %}
+                    <table class="table table-striped table-bordered">
+                        <thead>
+                            <tr>
+                                <th>{{ 'Row #' | trans }}</th>
+                                <th>{{ 'Error Message' | trans }}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for error in inlineErrors %}
+                                <tr>
+                                    <td>{{ error.csvRowNumber ?: '-' }}</td>
+                                    <td>{{ error.errorMessage }}</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                {% else %}
+                    <p>{{ 'There are too many errors to display inline.' | trans }}</p>
+                    <a href="{{ errorsDownloadUrl }}" class="btn btn-default">
+                        <i class="fa fa-download"></i> {{ 'Download Errors CSV' | trans }}
+                    </a>
+                {% endif %}
+            {% endblock %}
+        {% endembed %}
+    {% endif %}
+{% endblock %}

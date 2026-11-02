@@ -1,0 +1,38 @@
+{% extends '@Gui/Layout/layout.twig' %}
+
+{% set widget_title = 'Upload CSV' | trans %}
+
+{% block head_title widget_title %}
+{% block section_title widget_title %}
+
+{% block action %}
+    {{ backActionButton(url('/data-exchange/run/index', {idImportJob: idImportJob ?? ''}), 'Back to Runs' | trans) }}
+{% endblock %}
+
+{% block content %}
+    {% embed '@Gui/Partials/widget.twig' with { widget_title: 'Step 1: Download Template' | trans } %}
+        {% block widget_content %}
+            <div class="row form-group">
+                <div class="col-sm-12">
+                    {{ 'Download the CSV template with all required column headers.' | trans }}
+                </div>
+            </div>
+            <div class="row form-group">
+                <div class="col-sm-12">
+                    <a href="{{ templateDownloadUrl }}" class="btn btn-default">
+                        <i class="fa fa-download"></i> {{ 'Download CSV Template' | trans }}
+                    </a>
+                </div>
+            </div>
+        {% endblock %}
+    {% endembed %}
+
+    {% embed '@Gui/Partials/widget.twig' with { widget_title: 'Step 2: Upload Filled CSV' | trans } %}
+        {% block widget_content %}
+            {{ form_start(form) }}
+                {{ form_widget(form) }}
+                <input type="submit" class="btn btn-primary safe-submit" value="{{ 'Upload & Queue Import' | trans }}">
+            {{ form_end(form) }}
+        {% endblock %}
+    {% endembed %}
+{% endblock %}

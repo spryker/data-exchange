@@ -1,0 +1,75 @@
+<?xml version="1.0"?>
+<database xmlns="spryker:schema-01"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          name="zed"
+          xsi:schemaLocation="spryker:schema-01 https://static.spryker.com/schema-01.xsd"
+          namespace="Orm\Zed\DataExchange\Persistence"
+          package="src.Orm.Zed.DataExchange.Persistence">
+
+    <table name="spy_import_job">
+        <column name="id_import_job" type="INTEGER" required="true" primaryKey="true" autoIncrement="true"/>
+        <column name="name" type="VARCHAR" size="255" required="true" description="Human-readable name for the import job."/>
+        <column name="description" type="VARCHAR" size="1000" required="false" description="Optional description of the import job."/>
+        <column name="type" type="VARCHAR" size="255" required="true" description="The job type, e.g. products-csv-import."/>
+        <column name="reference" type="VARCHAR" size="255" required="true" description="Unique human-readable reference for the import job."/>
+        <column name="definition" type="LONGVARCHAR" required="true" description="JSON-encoded column mapping definition."/>
+
+        <behavior name="timestampable"/>
+
+        <id-method-parameter value="id_import_job_pk_seq"/>
+
+        <unique name="spy_import_job-reference">
+            <unique-column name="reference"/>
+        </unique>
+
+        <index name="spy_import_job-type">
+            <index-column name="type"/>
+        </index>
+    </table>
+
+    <table name="spy_import_job_run">
+        <column name="id_import_job_run" type="INTEGER" required="true" primaryKey="true" autoIncrement="true"/>
+        <column name="fk_import_job" type="INTEGER" required="true"/>
+        <column name="status" type="VARCHAR" size="50" required="true" defaultValue="pending" description="Current status: pending, processing, done, failed."/>
+        <column name="number_of_processed_lines" type="INTEGER" required="true" defaultValue="0" description="Total number of CSV rows attempted."/>
+        <column name="number_of_successfully_processed_lines" type="INTEGER" required="true" defaultValue="0" description="Number of successfully processed CSV rows."/>
+        <column name="number_of_failed_lines" type="INTEGER" required="true" defaultValue="0" description="Number of CSV rows that failed processing."/>
+        <column name="file_info" type="LONGVARCHAR" required="true" description="JSON-encoded file metadata: fileSystemName, storedPath, originalFileName, contentType, size."/>
+        <column name="import_started_at" type="TIMESTAMP" required="false" description="Timestamp when processing started."/>
+        <column name="import_finished_at" type="TIMESTAMP" required="false" description="Timestamp when processing finished."/>
+
+        <behavior name="timestampable"/>
+
+        <id-method-parameter value="id_import_job_run_pk_seq"/>
+
+        <foreign-key name="spy_import_job_run-fk_import_job" foreignTable="spy_import_job" onDelete="CASCADE">
+            <reference local="fk_import_job" foreign="id_import_job"/>
+        </foreign-key>
+
+        <index name="spy_import_job_run-fk_import_job">
+            <index-column name="fk_import_job"/>
+        </index>
+
+        <index name="spy_import_job_run-status">
+            <index-column name="status"/>
+        </index>
+    </table>
+
+    <table name="spy_import_job_run_error">
+        <column name="id_import_job_run_error" type="INTEGER" required="true" primaryKey="true" autoIncrement="true"/>
+        <column name="fk_import_job_run" type="INTEGER" required="true"/>
+        <column name="csv_row_number" type="INTEGER" required="false" description="The CSV row number that caused the error."/>
+        <column name="error_message" type="LONGVARCHAR" required="true" description="Error message describing what went wrong."/>
+
+        <id-method-parameter value="id_import_job_run_error_pk_seq"/>
+
+        <foreign-key name="spy_import_job_run_error-fk_import_job_run" foreignTable="spy_import_job_run" onDelete="CASCADE">
+            <reference local="fk_import_job_run" foreign="id_import_job_run"/>
+        </foreign-key>
+
+        <index name="spy_import_job_run_error-fk_import_job_run">
+            <index-column name="fk_import_job_run"/>
+        </index>
+    </table>
+
+</database>

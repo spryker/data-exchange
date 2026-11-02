@@ -1,0 +1,173 @@
+<?xml version="1.0"?>
+<transfers xmlns="spryker:transfer-01"
+           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+           xsi:schemaLocation="spryker:transfer-01 http://static.spryker.com/transfer-01.xsd">
+
+    <transfer name="ImportJob" strict="true">
+        <property name="idImportJob" type="int"/>
+        <property name="name" type="string"/>
+        <property name="reference" type="string"/>
+        <property name="description" type="string"/>
+        <property name="type" type="string"/>
+        <property name="definition" type="array" singular="definitionItem"/>
+        <property name="createdAt" type="string"/>
+        <property name="updatedAt" type="string"/>
+    </transfer>
+
+    <transfer name="ImportJobRun" strict="true">
+        <property name="idImportJobRun" type="int"/>
+        <property name="fkImportJob" type="int"/>
+        <property name="importJobReference" type="string"/>
+        <property name="status" type="string"/>
+        <property name="numberOfProcessedLines" type="int"/>
+        <property name="numberOfSuccessfullyProcessedLines" type="int"/>
+        <property name="numberOfFailedLines" type="int"/>
+        <property name="fileInfo" type="ImportJobRunFileInfo"/>
+        <property name="importStartedAt" type="string"/>
+        <property name="importFinishedAt" type="string"/>
+        <property name="createdAt" type="string"/>
+        <property name="updatedAt" type="string"/>
+    </transfer>
+
+    <transfer name="ImportJobRunFileInfo" strict="true">
+        <property name="fileSystemName" type="string"/>
+        <property name="storedPath" type="string"/>
+        <property name="originalFileName" type="string"/>
+        <property name="contentType" type="string"/>
+        <property name="size" type="int"/>
+        <property name="uploadedFilePath" type="string"/>
+    </transfer>
+
+    <transfer name="ImportJobRunError" strict="true">
+        <property name="idImportJobRunError" type="int"/>
+        <property name="fkImportJobRun" type="int"/>
+        <property name="csvRowNumber" type="int"/>
+        <property name="errorMessage" type="string"/>
+    </transfer>
+
+    <transfer name="ImportJobCollection" strict="true">
+        <property name="importJobs" type="ImportJob[]" singular="importJob"/>
+        <property name="pagination" type="Pagination"/>
+    </transfer>
+
+    <transfer name="ImportJobRunCollection" strict="true">
+        <property name="importJobRuns" type="ImportJobRun[]" singular="importJobRun"/>
+        <property name="pagination" type="Pagination"/>
+    </transfer>
+
+    <transfer name="ImportJobRunErrorCollection" strict="true">
+        <property name="importJobRunErrors" type="ImportJobRunError[]" singular="importJobRunError"/>
+        <property name="pagination" type="Pagination"/>
+    </transfer>
+
+    <transfer name="ImportJobRunCollectionRequest" strict="true">
+        <property name="importJobRuns" type="ImportJobRun[]" singular="importJobRun"/>
+        <property name="isTransactional" type="bool"/>
+    </transfer>
+
+    <transfer name="ImportJobRunCollectionResponse" strict="true">
+        <property name="importJobRuns" type="ImportJobRun[]" singular="importJobRun"/>
+        <property name="errors" type="Error[]" singular="error"/>
+    </transfer>
+
+    <transfer name="ImportJobCollectionRequest" strict="true">
+        <property name="importJobs" type="ImportJob[]" singular="importJob"/>
+        <property name="isTransactional" type="bool"/>
+    </transfer>
+
+    <transfer name="ImportJobCollectionResponse" strict="true">
+        <property name="importJobs" type="ImportJob[]" singular="importJob"/>
+        <property name="errors" type="Error[]" singular="error"/>
+    </transfer>
+
+    <transfer name="ImportJobCriteria" strict="true">
+        <property name="importJobConditions" type="ImportJobConditions"/>
+        <property name="sortCollection" type="Sort[]" singular="sort"/>
+        <property name="pagination" type="Pagination"/>
+        <property name="isWithData" type="bool"/>
+    </transfer>
+
+    <transfer name="ImportJobConditions" strict="true">
+        <property name="importJobIds" type="int[]" singular="idImportJob"/>
+        <property name="references" type="string[]" singular="reference"/>
+        <property name="types" type="string[]" singular="type"/>
+        <property name="names" type="string[]" singular="name"/>
+    </transfer>
+
+    <transfer name="ImportJobRunCriteria" strict="true">
+        <property name="importJobRunConditions" type="ImportJobRunConditions"/>
+        <property name="sortCollection" type="Sort[]" singular="sort"/>
+        <property name="pagination" type="Pagination"/>
+    </transfer>
+
+    <transfer name="ImportJobRunConditions" strict="true">
+        <property name="importJobRunIds" type="int[]" singular="idImportJobRun"/>
+        <property name="importJobIds" type="int[]" singular="idImportJob"/>
+        <property name="statuses" type="string[]" singular="status"/>
+    </transfer>
+
+    <transfer name="ImportJobRunErrorCriteria" strict="true">
+        <property name="importJobRunErrorConditions" type="ImportJobRunErrorConditions"/>
+        <property name="sortCollection" type="Sort[]" singular="sort"/>
+        <property name="pagination" type="Pagination"/>
+    </transfer>
+
+    <transfer name="ImportJobRunErrorConditions" strict="true">
+        <property name="importJobRunIds" type="int[]" singular="idImportJobRun"/>
+    </transfer>
+
+    <transfer name="ImportJobExportResult" strict="true">
+        <property name="type" type="string"/>
+        <property name="columns" type="string[]" singular="column"/>
+        <property name="rows" type="array" singular="row"/>
+        <property name="fileInfo" type="ImportJobRunFileInfo"/>
+        <property name="isSuccessful" type="bool"/>
+        <property name="errors" type="Error[]" singular="error"/>
+    </transfer>
+
+    <transfer name="ImportStepResponse" strict="true">
+        <property name="isSuccessful" type="bool"/>
+        <property name="errors" type="ImportStepError[]" singular="error"/>
+        <property name="publishEvents" type="ImportPublishEvent[]" singular="publishEvent"/>
+    </transfer>
+
+    <transfer name="ImportStepError" strict="true">
+        <property name="csvRowNumber" type="int"/>
+        <property name="errorMessage" type="string"/>
+    </transfer>
+
+    <transfer name="ImportPublishEvent" strict="true">
+        <property name="eventName" type="string"/>
+        <property name="entityId" type="int"/>
+    </transfer>
+
+    <transfer name="Pagination">
+        <property name="limit" type="int"/>
+        <property name="offset" type="int"/>
+        <property name="nbResults" type="int"/>
+    </transfer>
+
+    <transfer name="Sort">
+    </transfer>
+
+    <transfer name="Error">
+        <property name="message" type="string"/>
+    </transfer>
+
+    <transfer name="EventEntity">
+        <property name="id" type="int"/>
+    </transfer>
+
+    <transfer name="FileSystemStream">
+        <property name="fileSystemName" type="string"/>
+        <property name="path" type="string"/>
+    </transfer>
+
+    <transfer name="FileSystemContent">
+        <property name="path" type="string"/>
+        <property name="fileSystemName" type="string"/>
+        <property name="content" type="string"/>
+        <property name="config" type="array" singular="config"/>
+    </transfer>
+
+</transfers>

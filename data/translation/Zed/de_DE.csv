@@ -1,0 +1,62 @@
+"Export Products","Produkte exportieren"
+"No import jobs found. Please create a job first to have an export definition.","Keine Import-Jobs gefunden. Bitte erstellen Sie zuerst einen Job, um eine Exportdefinition zu erhalten."
+"Create a job","Job erstellen"
+"Back to Jobs","Zurück zu Jobs"
+"Select a job and click Export to download all products as CSV.","Wählen Sie einen Job aus und klicken Sie auf Exportieren, um alle Produkte als CSV herunterzuladen."
+Job,Job
+Export,Exportieren
+"Import Jobs",Import-Jobs
+"Create Import Job","Import-Job erstellen"
+Save,Speichern
+"Import Runs",Import-Durchläufe
+"Create Run","Durchlauf erstellen"
+"Upload CSV","CSV hochladen"
+"Back to Runs","Zurück zu Durchläufen"
+"Step 1: Download Template","Schritt 1: Vorlage herunterladen"
+"Download the CSV template with all required column headers.","Laden Sie die CSV-Vorlage mit allen erforderlichen Spaltenüberschriften herunter."
+"Download CSV Template","CSV-Vorlage herunterladen"
+"Step 2: Upload Filled CSV","Schritt 2: Ausgefüllte CSV hochladen"
+"Upload & Queue Import","Hochladen und Import einreihen"
+"Run Summary",Durchlauf-Zusammenfassung
+Status,Status
+"Total Processed Lines","Insgesamt verarbeitete Zeilen"
+"Successfully Processed Lines","Erfolgreich verarbeitete Zeilen"
+"Failed Lines","Fehlgeschlagene Zeilen"
+"Import Started At","Import gestartet am"
+"Import Finished At","Import abgeschlossen am"
+"Uploaded At","Hochgeladen am"
+"Original File",Originaldatei
+"There are too many errors to display inline.","Es gibt zu viele Fehler, um sie direkt anzuzeigen."
+"Download Errors CSV","Fehler-CSV herunterladen"
+Run,Run
+Details,Details
+"Import Errors",Import-Fehler
+"Import run with ID %id% does not exist.","Import-Durchlauf mit der ID %id% existiert nicht."
+"Import job with ID %id% does not exist.","Import-Job mit der ID %id% existiert nicht."
+"Import job with reference %reference% does not exist.","Import-Job mit der Referenz %reference% existiert nicht."
+Name,Name
+Reference,Referenz
+Type,Typ
+Description,Beschreibung
+"Success Runs","Erfolgreiche Läufe"
+"Processing Runs","Laufende Läufe"
+"Pending Runs","Ausstehende Läufe"
+"Failed Runs","Fehlgeschlagene Läufe"
+Actions,Aktionen
+Runs,Läufe
+Processed,Verarbeitet
+Successful,Erfolgreich
+Failed,Fehlgeschlagen
+"Started At","Gestartet am"
+"Finished At","Beendet am"
+"CSV File",CSV-Datei
+"Invalid file type. Allowed types: {{ types }}.","Ungültiger Dateityp. Erlaubte Typen: {{ types }}."
+"Import run created successfully. Processing is queued.","Importlauf erfolgreich erstellt. Die Verarbeitung ist eingeplant."
+"Import job ""%name%"" created successfully.","Import-Job ""%name%"" erfolgreich erstellt."
+"Row #","Zeile Nr."
+"Error Message",Fehlermeldung
+"No errors found for this run.","Für diesen Lauf wurden keine Fehler gefunden."
+pending,ausstehend
+processing,"in Bearbeitung"
+done,abgeschlossen
+failed,fehlgeschlagen

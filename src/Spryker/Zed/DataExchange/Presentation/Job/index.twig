@@ -1,0 +1,18 @@
+{% extends '@Gui/Layout/layout.twig' %}
+
+{% set widget_title = 'Import Jobs' | trans %}
+
+{% block head_title widget_title %}
+{% block section_title widget_title %}
+
+{% block action %}
+    {{ createActionButton(url('/data-exchange/job/create'), 'Create Import Job' | trans) }}
+{% endblock %}
+
+{% block content %}
+    {% embed '@Gui/Partials/widget.twig' with { widget_title: widget_title } %}
+        {% block widget_content %}
+            {{ table | raw }}
+        {% endblock %}
+    {% endembed %}
+{% endblock %}
