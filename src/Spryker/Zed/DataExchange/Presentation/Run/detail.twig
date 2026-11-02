@@ -17,7 +17,7 @@
                     <th>{{ 'Status' | trans }}</th>
                     <td>
                         <span class="label label-{% if jobRun.status == 'done' %}success{% elseif jobRun.status == 'failed' %}danger{% elseif jobRun.status == 'processing' %}warning{% else %}default{% endif %}">
-                            {{ jobRun.status | trans }}
+                            {{ ('data_exchange.import_job_run.status.' ~ jobRun.status) | trans }}
                         </span>
                     </td>
                 </tr>

@@ -56,7 +56,7 @@ Failed,Fehlgeschlagen
 "Row #","Zeile Nr."
 "Error Message",Fehlermeldung
 "No errors found for this run.","Für diesen Lauf wurden keine Fehler gefunden."
-pending,ausstehend
-processing,"in Bearbeitung"
-done,abgeschlossen
-failed,fehlgeschlagen
+data_exchange.import_job_run.status.pending,Ausstehend
+data_exchange.import_job_run.status.processing,"In Bearbeitung"
+data_exchange.import_job_run.status.done,Abgeschlossen
+data_exchange.import_job_run.status.failed,Fehlgeschlagen

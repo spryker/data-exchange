@@ -56,7 +56,7 @@ Failed,Failed
 "Row #","Row #"
 "Error Message","Error Message"
 "No errors found for this run.","No errors found for this run."
-pending,pending
-processing,processing
-done,done
-failed,failed
+data_exchange.import_job_run.status.pending,Pending
+data_exchange.import_job_run.status.processing,Processing
+data_exchange.import_job_run.status.done,Done
+data_exchange.import_job_run.status.failed,Failed
