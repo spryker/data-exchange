@@ -34,9 +34,13 @@
         <column name="number_of_processed_lines" type="INTEGER" required="true" defaultValue="0" description="Total number of CSV rows attempted."/>
         <column name="number_of_successfully_processed_lines" type="INTEGER" required="true" defaultValue="0" description="Number of successfully processed CSV rows."/>
         <column name="number_of_failed_lines" type="INTEGER" required="true" defaultValue="0" description="Number of CSV rows that failed processing."/>
+        <column name="number_of_processed_bytes" type="BIGINT" required="false" description="Number of bytes of the import file read so far, or null when the file handle cannot report its position."/>
         <column name="file_info" type="LONGVARCHAR" required="true" description="JSON-encoded file metadata: fileSystemName, storedPath, originalFileName, contentType, size."/>
         <column name="import_started_at" type="TIMESTAMP" required="false" description="Timestamp when processing started."/>
         <column name="import_finished_at" type="TIMESTAMP" required="false" description="Timestamp when processing finished."/>
+        <column name="claimed_by" type="VARCHAR" size="255" required="false" description="Identifier of the worker that holds the processing lease."/>
+        <column name="lease_expires_at" type="TIMESTAMP" required="false" description="Timestamp after which another worker may reclaim the processing run."/>
+        <column name="attempt_count" type="INTEGER" required="true" defaultValue="0" description="Number of times a worker has claimed the run."/>
 
         <behavior name="timestampable"/>
 

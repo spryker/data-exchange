@@ -18,12 +18,16 @@ use Spryker\Zed\DataExchange\Business\Export\Writer\ExportFileWriter;
 use Spryker\Zed\DataExchange\Business\Export\Writer\ExportFileWriterInterface;
 use Spryker\Zed\DataExchange\Business\ImportJob\Writer\ImportJobWriter;
 use Spryker\Zed\DataExchange\Business\ImportJob\Writer\ImportJobWriterInterface;
+use Spryker\Zed\DataExchange\Business\ImportJobRun\Claimer\ImportJobRunClaimer;
+use Spryker\Zed\DataExchange\Business\ImportJobRun\Claimer\ImportJobRunClaimerInterface;
 use Spryker\Zed\DataExchange\Business\ImportJobRun\Importer\ImportJobRunImporter;
 use Spryker\Zed\DataExchange\Business\ImportJobRun\Importer\ImportJobRunImporterInterface;
 use Spryker\Zed\DataExchange\Business\ImportJobRun\Manager\ImportJobRunManager;
 use Spryker\Zed\DataExchange\Business\ImportJobRun\Manager\ImportJobRunManagerInterface;
 use Spryker\Zed\DataExchange\Business\ImportJobRun\Mapper\CsvHeaderMapper;
 use Spryker\Zed\DataExchange\Business\ImportJobRun\Mapper\CsvHeaderMapperInterface;
+use Spryker\Zed\DataExchange\Business\ImportJobRun\Reader\ImportJobRunReader;
+use Spryker\Zed\DataExchange\Business\ImportJobRun\Reader\ImportJobRunReaderInterface;
 use Spryker\Zed\DataExchange\Business\ImportJobRun\Writer\ImportFileWriter;
 use Spryker\Zed\DataExchange\Business\ImportJobRun\Writer\ImportFileWriterInterface;
 use Spryker\Zed\DataExchange\Business\ImportJobRun\Writer\ImportJobRunWriter;
@@ -44,12 +48,26 @@ class DataExchangeBusinessFactory extends AbstractBusinessFactory
     public function createImportJobRunManager(): ImportJobRunManagerInterface
     {
         return new ImportJobRunManager(
-            $this->getRepository(),
+            $this->createImportJobRunClaimer(),
             $this->getEntityManager(),
             $this->createImportJobRunImporter(),
             $this->getConfig(),
             $this->getImportPreProcessorPlugins(),
             $this->getImportPostProcessorPlugins(),
+        );
+    }
+
+    public function createImportJobRunReader(): ImportJobRunReaderInterface
+    {
+        return new ImportJobRunReader($this->getRepository());
+    }
+
+    public function createImportJobRunClaimer(): ImportJobRunClaimerInterface
+    {
+        return new ImportJobRunClaimer(
+            $this->getRepository(),
+            $this->getEntityManager(),
+            $this->getConfig(),
         );
     }
 

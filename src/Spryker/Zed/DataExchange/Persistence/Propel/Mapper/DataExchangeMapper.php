@@ -69,8 +69,12 @@ class DataExchangeMapper
             ->setNumberOfProcessedLines($entity->getNumberOfProcessedLines())
             ->setNumberOfSuccessfullyProcessedLines($entity->getNumberOfSuccessfullyProcessedLines())
             ->setNumberOfFailedLines($entity->getNumberOfFailedLines())
+            ->setNumberOfProcessedBytes($entity->getNumberOfProcessedBytes() !== null ? (int)$entity->getNumberOfProcessedBytes() : null)
             ->setImportStartedAt($entity->getImportStartedAt() ? $entity->getImportStartedAt()->format(static::DATETIME_FORMAT) : null)
             ->setImportFinishedAt($entity->getImportFinishedAt() ? $entity->getImportFinishedAt()->format(static::DATETIME_FORMAT) : null)
+            ->setClaimedBy($entity->getClaimedBy())
+            ->setLeaseExpiresAt($entity->getLeaseExpiresAt() ? $entity->getLeaseExpiresAt()->format(static::DATETIME_FORMAT) : null)
+            ->setAttemptCount($entity->getAttemptCount())
             ->setCreatedAt($entity->getCreatedAt() ? $entity->getCreatedAt()->format(static::DATETIME_FORMAT) : null)
             ->setUpdatedAt($entity->getUpdatedAt() ? $entity->getUpdatedAt()->format(static::DATETIME_FORMAT) : null);
 
@@ -104,6 +108,10 @@ class DataExchangeMapper
 
         if ($transfer->getNumberOfFailedLines() !== null) {
             $entity->setNumberOfFailedLines($transfer->getNumberOfFailedLines());
+        }
+
+        if ($transfer->getNumberOfProcessedBytes() !== null) {
+            $entity->setNumberOfProcessedBytes((string)$transfer->getNumberOfProcessedBytes());
         }
 
         if ($transfer->getImportStartedAt() !== null) {

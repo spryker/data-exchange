@@ -60,6 +60,8 @@ interface DataExchangeFacadeInterface
     /**
      * Specification:
      * - Retrieves a collection of import job runs filtered by the provided criteria.
+     * - Expands each run with `ImportJobRunTransfer.progressPercentage`: processed bytes divided by the file size, between 0 and 100.
+     * - Sets `ImportJobRunTransfer.progressPercentage` to `null` when the processed bytes or the file size are unknown.
      * - Returns `ImportJobRunCollectionTransfer` with matching runs and pagination.
      *
      * @api
@@ -92,15 +94,19 @@ interface DataExchangeFacadeInterface
 
     /**
      * Specification:
-     * - Finds the oldest pending import job run.
-     * - Does nothing if no pending run exists.
-     * - Marks the run as processing and records the start timestamp.
+     * - Finds the oldest claimable import job run: a pending run, or a processing run whose lease is not set or has expired (abandoned by its worker).
+     * - Skips runs that were already claimed `DataExchangeConfig::getImportJobRunMaxAttempts()` times.
+     * - Does nothing if no claimable run exists, or if another worker claims the same run first.
+     * - Claims the run with a conditional update: marks it as processing, sets a unique `claimedBy` token, a lease of `DataExchangeConfig::getImportJobRunLeaseDurationInMinutes()`, increments the attempt count, records the start timestamp and resets the progress counters of a previous attempt.
      * - Executes pre-processor plugins `\Spryker\Zed\DataExchangeExtension\Dependency\Plugin\ImportPreProcessorPluginInterface` before processing.
      * - Reads the file in batches and runs each batch through the import steps of the schema plugin registered for the job type.
      * - Records per-row errors for failed rows.
-     * - Triggers the collected publish events once after all rows were processed.
-     * - Executes post-processor plugins `\Spryker\Zed\DataExchangeExtension\Dependency\Plugin\ImportPostProcessorPluginInterface` after processing.
+     * - After every batch, writes the progress counters and renews the lease, only while `claimedBy` still matches the token of this worker.
+     * - Stops before the next batch, without an error, when that write affects no row because another worker took over the claim; the run is then left to that worker and post-processors are not executed.
+     * - Triggers the publish events collected from the processed batches once after reading stops.
      * - Marks the run as done or failed with final counters and finish timestamp; an unhandled exception marks the run as failed and records the message as an error.
+     * - Writes the final status only while `claimedBy` still matches the token of this worker; otherwise leaves the run to the other worker, records no error and does not execute post-processors.
+     * - Executes post-processor plugins `\Spryker\Zed\DataExchangeExtension\Dependency\Plugin\ImportPostProcessorPluginInterface` after a completed import; a post-processor exception is recorded as an error and keeps the run status.
      *
      * @api
      */

@@ -23,7 +23,7 @@ interface DataExchangeRepositoryInterface
 
     public function getImportJobRunCollection(ImportJobRunCriteriaTransfer $criteriaTransfer): ImportJobRunCollectionTransfer;
 
-    public function findOldestPendingJobRun(): ?ImportJobRunTransfer;
+    public function findOldestClaimableImportJobRun(string $leaseCheckedAt, int $maxAttempts): ?ImportJobRunTransfer;
 
     public function getImportJobRunErrorCollection(ImportJobRunErrorCriteriaTransfer $criteriaTransfer): ImportJobRunErrorCollectionTransfer;
 }

@@ -65,19 +65,22 @@ class DataExchangeRepository extends AbstractRepository implements DataExchangeR
         return $importJobRunCollectionTransfer;
     }
 
-    public function findOldestPendingJobRun(): ?ImportJobRunTransfer
+    public function findOldestClaimableImportJobRun(string $leaseCheckedAt, int $maxAttempts): ?ImportJobRunTransfer
     {
-        $entity = $this->getFactory()
-            ->createImportJobRunQuery()
-            ->filterByStatus($this->getFactory()->getConfig()->getImportStatusPending())
+        $importJobRunQuery = $this->getFactory()->createImportJobRunQuery();
+
+        $importJobRunEntity = $this->getFactory()
+            ->createImportJobRunQueryExpander()
+            ->expandWithClaimableCondition($importJobRunQuery, $leaseCheckedAt, $maxAttempts)
             ->orderByCreatedAt(Criteria::ASC)
+            ->orderByIdImportJobRun(Criteria::ASC)
             ->findOne();
 
-        if ($entity === null) {
+        if ($importJobRunEntity === null) {
             return null;
         }
 
-        return $this->getFactory()->createMapper()->mapImportJobRunEntityToTransfer($entity, new ImportJobRunTransfer());
+        return $this->getFactory()->createMapper()->mapImportJobRunEntityToTransfer($importJobRunEntity, new ImportJobRunTransfer());
     }
 
     public function getImportJobRunErrorCollection(ImportJobRunErrorCriteriaTransfer $criteriaTransfer): ImportJobRunErrorCollectionTransfer

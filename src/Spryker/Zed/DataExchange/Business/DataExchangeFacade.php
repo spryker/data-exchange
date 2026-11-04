@@ -66,7 +66,7 @@ class DataExchangeFacade extends AbstractFacade implements DataExchangeFacadeInt
      */
     public function getImportJobRunCollection(ImportJobRunCriteriaTransfer $criteriaTransfer): ImportJobRunCollectionTransfer
     {
-        return $this->getRepository()->getImportJobRunCollection($criteriaTransfer);
+        return $this->getFactory()->createImportJobRunReader()->getImportJobRunCollection($criteriaTransfer);
     }
 
     /**

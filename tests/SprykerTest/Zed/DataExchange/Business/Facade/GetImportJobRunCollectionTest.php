@@ -12,8 +12,8 @@ namespace SprykerTest\Zed\DataExchange\Business\Facade;
 use Codeception\Test\Unit;
 use Generated\Shared\Transfer\ImportJobRunConditionsTransfer;
 use Generated\Shared\Transfer\ImportJobRunCriteriaTransfer;
+use Generated\Shared\Transfer\ImportJobRunFileInfoTransfer;
 use Generated\Shared\Transfer\ImportJobRunTransfer;
-use Generated\Shared\Transfer\ImportJobTransfer;
 use SprykerTest\Zed\DataExchange\DataExchangeBusinessTester;
 
 /**
@@ -50,12 +50,8 @@ class GetImportJobRunCollectionTest extends Unit
     public function testReturnsRunsFilteredByJobId(): void
     {
         // Arrange
-        $importJob = $this->tester->haveImportJob([
-            ImportJobTransfer::REFERENCE => 'job-with-runs',
-        ]);
-        $otherJob = $this->tester->haveImportJob([
-            ImportJobTransfer::REFERENCE => 'other-job',
-        ]);
+        $importJob = $this->tester->haveImportJob();
+        $otherJob = $this->tester->haveImportJob();
 
         $this->tester->haveImportJobRun([
             ImportJobRunTransfer::FK_IMPORT_JOB => $importJob->getIdImportJob(),
@@ -108,5 +104,50 @@ class GetImportJobRunCollectionTest extends Unit
         $this->assertSame(100, $run->getNumberOfProcessedLines());
         $this->assertSame(95, $run->getNumberOfSuccessfullyProcessedLines());
         $this->assertSame(5, $run->getNumberOfFailedLines());
+    }
+
+    /**
+     * @dataProvider provideProcessedBytesAndFileSizes
+     *
+     * @param array<string, int> $fileInfo
+     */
+    public function testReturnsRunWithProgressPercentageOfProcessedBytesToFileSize(
+        ?int $numberOfProcessedBytes,
+        array $fileInfo,
+        ?float $expectedProgressPercentage,
+    ): void {
+        // Arrange
+        $importJobTransfer = $this->tester->haveImportJob();
+        $this->tester->haveImportJobRun([
+            ImportJobRunTransfer::FK_IMPORT_JOB => $importJobTransfer->getIdImportJobOrFail(),
+            ImportJobRunTransfer::NUMBER_OF_PROCESSED_BYTES => $numberOfProcessedBytes,
+            ImportJobRunTransfer::FILE_INFO => $fileInfo,
+        ]);
+        $importJobRunCriteriaTransfer = (new ImportJobRunCriteriaTransfer())
+            ->setImportJobRunConditions(
+                (new ImportJobRunConditionsTransfer())->addIdImportJob($importJobTransfer->getIdImportJobOrFail()),
+            );
+
+        // Act
+        $importJobRunCollectionTransfer = $this->tester->getFacade()->getImportJobRunCollection($importJobRunCriteriaTransfer);
+
+        // Assert
+        $this->assertSame($expectedProgressPercentage, $importJobRunCollectionTransfer->getImportJobRuns()->getIterator()->current()->getProgressPercentage());
+    }
+
+    /**
+     * @return array<string, array{?int, array<string, int>, ?float}>
+     */
+    public static function provideProcessedBytesAndFileSizes(): array
+    {
+        return [
+            'run in progress' => [500, [ImportJobRunFileInfoTransfer::SIZE => 2000], 25.0],
+            'completed run' => [2000, [ImportJobRunFileInfoTransfer::SIZE => 2000], 100.0],
+            'processed bytes above the file size' => [2500, [ImportJobRunFileInfoTransfer::SIZE => 2000], 100.0],
+            'run not started' => [0, [ImportJobRunFileInfoTransfer::SIZE => 2000], 0.0],
+            'unknown processed bytes' => [null, [ImportJobRunFileInfoTransfer::SIZE => 2000], null],
+            'unknown file size' => [500, [], null],
+            'empty file' => [0, [ImportJobRunFileInfoTransfer::SIZE => 0], null],
+        ];
     }
 }

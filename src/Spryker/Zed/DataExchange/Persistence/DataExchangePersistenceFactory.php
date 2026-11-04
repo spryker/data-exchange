@@ -14,6 +14,7 @@ use Orm\Zed\DataExchange\Persistence\SpyImportJobRunErrorQuery;
 use Orm\Zed\DataExchange\Persistence\SpyImportJobRunQuery;
 use Spryker\Service\UtilEncoding\UtilEncodingServiceInterface;
 use Spryker\Zed\DataExchange\DataExchangeDependencyProvider;
+use Spryker\Zed\DataExchange\Persistence\Propel\Expander\ImportJobRunQueryExpander;
 use Spryker\Zed\DataExchange\Persistence\Propel\Mapper\DataExchangeMapper;
 use Spryker\Zed\Kernel\Persistence\AbstractPersistenceFactory;
 
@@ -42,6 +43,11 @@ class DataExchangePersistenceFactory extends AbstractPersistenceFactory
     public function createMapper(): DataExchangeMapper
     {
         return new DataExchangeMapper($this->getUtilEncodingService());
+    }
+
+    public function createImportJobRunQueryExpander(): ImportJobRunQueryExpander
+    {
+        return new ImportJobRunQueryExpander($this->getConfig());
     }
 
     public function getUtilEncodingService(): UtilEncodingServiceInterface

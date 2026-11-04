@@ -16,5 +16,5 @@ interface ImportJobRunImporterInterface
     /**
      * Reads the CSV file, processes rows through import steps in batches, triggers publish events, and updates the job run with results.
      */
-    public function importJobRun(ImportJobRunTransfer $importJobRun): void;
+    public function importJobRun(ImportJobRunTransfer $importJobRun): bool;
 }

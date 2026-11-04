@@ -48,20 +48,18 @@ class GetImportJobCollectionTest extends Unit
     public function testReturnsAllJobs(): void
     {
         // Arrange
-        $this->tester->haveImportJob([
+        $importJobTransferA = $this->tester->haveImportJob([
             ImportJobTransfer::NAME => 'Job A',
-            ImportJobTransfer::REFERENCE => 'job-a',
         ]);
-        $this->tester->haveImportJob([
+        $importJobTransferB = $this->tester->haveImportJob([
             ImportJobTransfer::NAME => 'Job B',
-            ImportJobTransfer::REFERENCE => 'job-b',
         ]);
 
         $criteriaTransfer = (new ImportJobCriteriaTransfer())
             ->setImportJobConditions(
                 (new ImportJobConditionsTransfer())
-                    ->addReference('job-a')
-                    ->addReference('job-b'),
+                    ->addReference($importJobTransferA->getReferenceOrFail())
+                    ->addReference($importJobTransferB->getReferenceOrFail()),
             );
 
         // Act
@@ -76,16 +74,14 @@ class GetImportJobCollectionTest extends Unit
         // Arrange
         $importJob = $this->tester->haveImportJob([
             ImportJobTransfer::NAME => 'Target Job',
-            ImportJobTransfer::REFERENCE => 'target-ref',
         ]);
         $this->tester->haveImportJob([
             ImportJobTransfer::NAME => 'Other Job',
-            ImportJobTransfer::REFERENCE => 'other-ref',
         ]);
 
         $criteriaTransfer = (new ImportJobCriteriaTransfer())
             ->setImportJobConditions(
-                (new ImportJobConditionsTransfer())->addReference('target-ref'),
+                (new ImportJobConditionsTransfer())->addReference($importJob->getReferenceOrFail()),
             );
 
         // Act
@@ -94,7 +90,7 @@ class GetImportJobCollectionTest extends Unit
         // Assert
         $this->assertCount(1, $collectionTransfer->getImportJobs());
         $this->assertSame(
-            'target-ref',
+            $importJob->getReferenceOrFail(),
             $collectionTransfer->getImportJobs()->getIterator()->current()->getReference(),
         );
     }
@@ -105,9 +101,8 @@ class GetImportJobCollectionTest extends Unit
         $definition = [
             ['property_name_in_file' => 'Abstract SKU', 'system_property_name' => 'abstract_sku'],
         ];
-        $this->tester->haveImportJob([
+        $importJobTransfer = $this->tester->haveImportJob([
             ImportJobTransfer::NAME => 'Full Job',
-            ImportJobTransfer::REFERENCE => 'full-ref',
             ImportJobTransfer::TYPE => 'demo-csv',
             ImportJobTransfer::DEFINITION => $definition,
             ImportJobTransfer::DESCRIPTION => 'Test description',
@@ -115,7 +110,7 @@ class GetImportJobCollectionTest extends Unit
 
         $criteriaTransfer = (new ImportJobCriteriaTransfer())
             ->setImportJobConditions(
-                (new ImportJobConditionsTransfer())->addReference('full-ref'),
+                (new ImportJobConditionsTransfer())->addReference($importJobTransfer->getReferenceOrFail()),
             );
 
         // Act
@@ -124,7 +119,7 @@ class GetImportJobCollectionTest extends Unit
         // Assert
         $job = $collectionTransfer->getImportJobs()->getIterator()->current();
         $this->assertSame('Full Job', $job->getName());
-        $this->assertSame('full-ref', $job->getReference());
+        $this->assertSame($importJobTransfer->getReferenceOrFail(), $job->getReference());
         $this->assertSame('demo-csv', $job->getType());
         $this->assertSame('Test description', $job->getDescription());
         $this->assertSame($definition, $job->getDefinition());

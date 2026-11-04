@@ -95,6 +95,25 @@ class DataExchangeConfig extends AbstractBundleConfig
 
     /**
      * Specification:
+     * - Defines how long, in minutes, a worker holds an import job run after claiming it.
+     * - Once the lease expires, another worker may reclaim the run.
+     */
+    protected const int IMPORT_JOB_RUN_LEASE_DURATION_IN_MINUTES = 5;
+
+    /**
+     * Specification:
+     * - Defines how many times an import job run may be claimed before it is no longer picked up.
+     */
+    protected const int IMPORT_JOB_RUN_MAX_ATTEMPTS = 3;
+
+    /**
+     * Specification:
+     * - Defines the time zone in which import job run lease timestamps are written and compared.
+     */
+    protected const string IMPORT_JOB_RUN_LEASE_TIME_ZONE = 'UTC';
+
+    /**
+     * Specification:
      * - Returns the status value representing a pending import job run.
      * - Used by the repository to find the next job run to process.
      *
@@ -239,5 +258,43 @@ class DataExchangeConfig extends AbstractBundleConfig
     public function getImportDefaultContentType(): string
     {
         return static::IMPORT_DEFAULT_CONTENT_TYPE;
+    }
+
+    /**
+     * Specification:
+     * - Returns how long, in minutes, a worker holds an import job run after claiming it.
+     * - A processing run whose lease has expired is considered abandoned and can be reclaimed.
+     * - The lease is renewed after every batch, so it must exceed the longest expected time between two renewals: the pre-processors plus the first batch, or any later batch.
+     * - Otherwise a live run is reclaimed by another worker; lower the batch size from `getImportCsvBatchSize()` when one batch can take longer than the lease.
+     *
+     * @api
+     */
+    public function getImportJobRunLeaseDurationInMinutes(): int
+    {
+        return static::IMPORT_JOB_RUN_LEASE_DURATION_IN_MINUTES;
+    }
+
+    /**
+     * Specification:
+     * - Returns how many times an import job run may be claimed.
+     * - A run that reached this number of attempts is no longer claimed.
+     *
+     * @api
+     */
+    public function getImportJobRunMaxAttempts(): int
+    {
+        return static::IMPORT_JOB_RUN_MAX_ATTEMPTS;
+    }
+
+    /**
+     * Specification:
+     * - Returns the time zone in which import job run lease timestamps are written and compared.
+     * - Every worker uses it regardless of the PHP default time zone, so their lease times stay comparable.
+     *
+     * @api
+     */
+    public function getImportJobRunLeaseTimeZone(): string
+    {
+        return static::IMPORT_JOB_RUN_LEASE_TIME_ZONE;
     }
 }

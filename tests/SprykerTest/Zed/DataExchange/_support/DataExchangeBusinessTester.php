@@ -11,6 +11,8 @@ namespace SprykerTest\Zed\DataExchange;
 
 use Codeception\Actor;
 use Generated\Shared\Transfer\ImportJobRunFileInfoTransfer;
+use Generated\Shared\Transfer\ImportJobRunTransfer;
+use Generated\Shared\Transfer\ImportJobTransfer;
 use Spryker\Service\FileSystem\FileSystemDependencyProvider;
 use Spryker\Service\Flysystem\FlysystemDependencyProvider;
 use Spryker\Service\Flysystem\Plugin\FileSystem\FileSystemReaderPlugin;
@@ -18,6 +20,7 @@ use Spryker\Service\Flysystem\Plugin\FileSystem\FileSystemStreamPlugin;
 use Spryker\Service\Flysystem\Plugin\FileSystem\FileSystemWriterPlugin;
 use Spryker\Service\FlysystemLocalFileSystem\Plugin\Flysystem\LocalFilesystemBuilderPlugin;
 use Spryker\Shared\FileSystem\FileSystemConstants;
+use SprykerTest\Zed\DataExchange\Plugin\DemoCsvImportSchemaPlugin;
 
 /**
  * @method void wantToTest($text)
@@ -41,6 +44,8 @@ class DataExchangeBusinessTester extends Actor
     public const string FILE_SYSTEM_NAME_IMPORTS = 'data-exchange-imports';
 
     public const string FILE_SYSTEM_NAME_EXPORTS = 'data-exchange-exports';
+
+    public const string CSV_STORED_PATH = 'demo-csv/import.csv';
 
     /**
      * Points both engine file systems at a fresh local directory and returns its absolute path.
@@ -95,6 +100,28 @@ class DataExchangeBusinessTester extends Actor
             ->setOriginalFileName(basename($storedPath))
             ->setContentType('text/csv')
             ->setSize((int)filesize($absolutePath));
+    }
+
+    /**
+     * @param array<int, array<int, string>> $rows
+     * @param array<string, mixed> $importJobRunSeedData
+     */
+    public function havePendingImportJobRunWithCsvFile(
+        string $rootDirectory,
+        array $rows,
+        string $storedPath = self::CSV_STORED_PATH,
+        array $importJobRunSeedData = [],
+    ): ImportJobRunTransfer {
+        $importJobRunFileInfoTransfer = $this->haveImportCsvFile($rootDirectory, $storedPath, $rows);
+        $importJobTransfer = $this->haveImportJob([
+            ImportJobTransfer::TYPE => DemoCsvImportSchemaPlugin::TYPE,
+            ImportJobTransfer::DEFINITION => (new DemoCsvImportSchemaPlugin())->getSchema(),
+        ]);
+
+        return $this->haveImportJobRun($importJobRunSeedData + [
+            ImportJobRunTransfer::FK_IMPORT_JOB => $importJobTransfer->getIdImportJobOrFail(),
+            ImportJobRunTransfer::FILE_INFO => $importJobRunFileInfoTransfer->toArray(true, true),
+        ]);
     }
 
     /**

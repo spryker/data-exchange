@@ -13,10 +13,10 @@ use DateTime;
 use Generated\Shared\Transfer\ImportJobRunErrorTransfer;
 use Generated\Shared\Transfer\ImportJobRunTransfer;
 use Spryker\Shared\Log\LoggerTrait;
+use Spryker\Zed\DataExchange\Business\ImportJobRun\Claimer\ImportJobRunClaimerInterface;
 use Spryker\Zed\DataExchange\Business\ImportJobRun\Importer\ImportJobRunImporterInterface;
 use Spryker\Zed\DataExchange\DataExchangeConfig;
 use Spryker\Zed\DataExchange\Persistence\DataExchangeEntityManagerInterface;
-use Spryker\Zed\DataExchange\Persistence\DataExchangeRepositoryInterface;
 use Spryker\Zed\EventBehavior\EventBehaviorConfig;
 use Throwable;
 
@@ -24,12 +24,14 @@ class ImportJobRunManager implements ImportJobRunManagerInterface
 {
     use LoggerTrait;
 
+    protected const string DATETIME_FORMAT = 'Y-m-d H:i:s';
+
     /**
      * @param array<\Spryker\Zed\DataExchangeExtension\Dependency\Plugin\ImportPreProcessorPluginInterface> $preProcessorPlugins
      * @param array<\Spryker\Zed\DataExchangeExtension\Dependency\Plugin\ImportPostProcessorPluginInterface> $postProcessorPlugins
      */
     public function __construct(
-        protected DataExchangeRepositoryInterface $repository,
+        protected ImportJobRunClaimerInterface $importJobRunClaimer,
         protected DataExchangeEntityManagerInterface $entityManager,
         protected ImportJobRunImporterInterface $importer,
         protected DataExchangeConfig $config,
@@ -40,18 +42,18 @@ class ImportJobRunManager implements ImportJobRunManagerInterface
 
     public function processNextPendingRun(): void
     {
-        $importJobRun = $this->repository->findOldestPendingJobRun();
+        $importJobRun = $this->importJobRunClaimer->claimNextImportJobRun();
 
         if ($importJobRun === null) {
             return;
         }
 
-        $this->markAsProcessing($importJobRun);
-
         try {
             $this->executePreProcessors($importJobRun);
-            $this->importer->importJobRun($importJobRun);
-            $this->executePostProcessors($importJobRun);
+
+            if (!$this->importer->importJobRun($importJobRun)) {
+                return;
+            }
         } catch (Throwable $exception) {
             EventBehaviorConfig::enableEvent();
             $this->getLogger()->error(
@@ -59,25 +61,25 @@ class ImportJobRunManager implements ImportJobRunManagerInterface
                 ['exception' => $exception],
             );
             $this->markAsFailed($importJobRun, $exception);
+
+            return;
         }
-    }
 
-    protected function markAsProcessing(ImportJobRunTransfer $importJobRun): void
-    {
-        $importJobRun
-            ->setStatus($this->config->getImportStatusProcessing())
-            ->setImportStartedAt((new DateTime())->format('Y-m-d H:i:s'));
-
-        $this->entityManager->updateImportJobRun($importJobRun);
+        $this->executePostProcessors($importJobRun);
     }
 
     protected function markAsFailed(ImportJobRunTransfer $importJobRun, Throwable $exception): void
     {
+        $finishedAt = (new DateTime())->format(static::DATETIME_FORMAT);
+
         $importJobRun
             ->setStatus($this->config->getImportStatusFailed())
-            ->setImportFinishedAt((new DateTime())->format('Y-m-d H:i:s'));
+            ->setImportFinishedAt($finishedAt)
+            ->setUpdatedAt($finishedAt);
 
-        $this->entityManager->updateImportJobRun($importJobRun);
+        if (!$this->entityManager->updateClaimedImportJobRunResult($importJobRun)) {
+            return;
+        }
 
         $this->entityManager->createImportJobRunError(
             (new ImportJobRunErrorTransfer())
@@ -95,8 +97,20 @@ class ImportJobRunManager implements ImportJobRunManagerInterface
 
     protected function executePostProcessors(ImportJobRunTransfer $importJobRun): void
     {
-        foreach ($this->postProcessorPlugins as $plugin) {
-            $plugin->postProcess($importJobRun);
+        try {
+            foreach ($this->postProcessorPlugins as $plugin) {
+                $plugin->postProcess($importJobRun);
+            }
+        } catch (Throwable $exception) {
+            $this->getLogger()->error(
+                sprintf('Post-processing of import job run #%d failed: %s', $importJobRun->getIdImportJobRun(), $exception->getMessage()),
+                ['exception' => $exception],
+            );
+            $this->entityManager->createImportJobRunError(
+                (new ImportJobRunErrorTransfer())
+                    ->setFkImportJobRun($importJobRun->getIdImportJobRunOrFail())
+                    ->setErrorMessage(sprintf('Unhandled exception during post-processing: %s', $exception->getMessage())),
+            );
         }
     }
 }

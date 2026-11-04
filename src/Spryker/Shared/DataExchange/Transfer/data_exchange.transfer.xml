@@ -22,9 +22,14 @@
         <property name="numberOfProcessedLines" type="int"/>
         <property name="numberOfSuccessfullyProcessedLines" type="int"/>
         <property name="numberOfFailedLines" type="int"/>
+        <property name="numberOfProcessedBytes" type="int"/>
+        <property name="progressPercentage" type="float"/>
         <property name="fileInfo" type="ImportJobRunFileInfo"/>
         <property name="importStartedAt" type="string"/>
         <property name="importFinishedAt" type="string"/>
+        <property name="claimedBy" type="string"/>
+        <property name="leaseExpiresAt" type="string"/>
+        <property name="attemptCount" type="int"/>
         <property name="createdAt" type="string"/>
         <property name="updatedAt" type="string"/>
     </transfer>

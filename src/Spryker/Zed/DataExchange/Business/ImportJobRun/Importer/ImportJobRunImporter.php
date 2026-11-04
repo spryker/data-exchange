@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace Spryker\Zed\DataExchange\Business\ImportJobRun\Importer;
 
 use DateTime;
+use DateTimeZone;
 use Generated\Shared\Transfer\EventEntityTransfer;
 use Generated\Shared\Transfer\FileSystemStreamTransfer;
 use Generated\Shared\Transfer\ImportJobConditionsTransfer;
@@ -30,6 +31,8 @@ use Spryker\Zed\EventBehavior\EventBehaviorConfig;
 
 class ImportJobRunImporter implements ImportJobRunImporterInterface
 {
+    protected const string DATETIME_FORMAT = 'Y-m-d H:i:s';
+
     public function __construct(
         protected DataExchangeRepositoryInterface $repository,
         protected DataExchangeEntityManagerInterface $entityManager,
@@ -41,11 +44,11 @@ class ImportJobRunImporter implements ImportJobRunImporterInterface
     ) {
     }
 
-    public function importJobRun(ImportJobRunTransfer $importJobRun): void
+    public function importJobRun(ImportJobRunTransfer $importJobRun): bool
     {
-        $stream = $this->openCsvStream($importJobRun);
         $schemaPlugin = $this->resolveSchemaPluginForJobRun($importJobRun);
         $this->csvHeaderMapper->buildMappingRulesFromSchema($schemaPlugin->getSchema());
+        $stream = $this->openCsvStream($importJobRun);
 
         try {
             $importResult = $this->readAndProcessCsv($stream, $importJobRun, $schemaPlugin->getImportSteps());
@@ -56,7 +59,11 @@ class ImportJobRunImporter implements ImportJobRunImporterInterface
 
         $this->triggerCollectedPublishEvents($importResult['collectedPublishEvents']);
 
-        $this->updateJobRunWithResults($importJobRun, $importResult['processedLines'], $importResult['successfulLines'], $importResult['failedLines']);
+        if ($importResult['isLeaseLost']) {
+            return false;
+        }
+
+        return $this->updateJobRunWithResults($importJobRun, $importResult['processedLines'], $importResult['successfulLines'], $importResult['failedLines'], $importResult['processedBytes']);
     }
 
     /**
@@ -113,7 +120,7 @@ class ImportJobRunImporter implements ImportJobRunImporterInterface
      * @param resource $stream
      * @param array<\Spryker\Zed\DataExchangeExtension\Dependency\Plugin\ImportStepInterface> $steps
      *
-     * @return array{processedLines: int, successfulLines: int, failedLines: int, collectedPublishEvents: array<string, array<int, \Generated\Shared\Transfer\EventEntityTransfer>>}
+     * @return array{isLeaseLost: bool, processedBytes: int|null, processedLines: int, successfulLines: int, failedLines: int, collectedPublishEvents: array<string, array<int, \Generated\Shared\Transfer\EventEntityTransfer>>}
      */
     protected function readAndProcessCsv($stream, ImportJobRunTransfer $importJobRun, array $steps): array
     {
@@ -126,6 +133,7 @@ class ImportJobRunImporter implements ImportJobRunImporterInterface
         $batchSize = $this->config->getImportCsvBatchSize();
         $batchResults = [];
         $collectedPublishEvents = [];
+        $isLeaseLost = false;
         $idImportJobRun = $importJobRun->getIdImportJobRunOrFail();
 
         EventBehaviorConfig::disableEvent();
@@ -165,11 +173,18 @@ class ImportJobRunImporter implements ImportJobRunImporterInterface
             $batchResults[] = $this->executeBatch($batch, $idImportJobRun, $steps);
             $processedLines += count($batch);
             $batch = [];
+
+            if (!$this->writeProgress($stream, $importJobRun, $processedLines, $failedLines, $batchResults)) {
+                $isLeaseLost = true;
+
+                break;
+            }
         }
 
         if ($batch !== []) {
             $batchResults[] = $this->executeBatch($batch, $idImportJobRun, $steps);
             $processedLines += count($batch);
+            $isLeaseLost = !$this->writeProgress($stream, $importJobRun, $processedLines, $failedLines, $batchResults);
         }
 
         foreach ($batchResults as $batchResult) {
@@ -181,11 +196,34 @@ class ImportJobRunImporter implements ImportJobRunImporterInterface
         }
 
         return [
+            'isLeaseLost' => $isLeaseLost,
+            'processedBytes' => $this->getProcessedBytes($stream),
             'processedLines' => $processedLines,
             'successfulLines' => $successfulLines,
             'failedLines' => $failedLines,
             'collectedPublishEvents' => $collectedPublishEvents,
         ];
+    }
+
+    /**
+     * @param resource $stream
+     * @param array<array{successful: int, failed: int, publishEvents: array<string, array<int, \Generated\Shared\Transfer\EventEntityTransfer>>}> $batchResults
+     */
+    protected function writeProgress($stream, ImportJobRunTransfer $importJobRunTransfer, int $processedLines, int $failedLines, array $batchResults): bool
+    {
+        $writtenAt = new DateTime();
+        $leaseExpiresAt = (new DateTime('now', new DateTimeZone($this->config->getImportJobRunLeaseTimeZone())))
+            ->modify(sprintf('+%d minutes', max(1, $this->config->getImportJobRunLeaseDurationInMinutes())));
+
+        $importJobRunTransfer
+            ->setNumberOfProcessedLines($processedLines)
+            ->setNumberOfSuccessfullyProcessedLines(array_sum(array_column($batchResults, 'successful')))
+            ->setNumberOfFailedLines($failedLines + array_sum(array_column($batchResults, 'failed')))
+            ->setNumberOfProcessedBytes($this->getProcessedBytes($stream))
+            ->setLeaseExpiresAt($leaseExpiresAt->format(static::DATETIME_FORMAT))
+            ->setUpdatedAt($writtenAt->format(static::DATETIME_FORMAT));
+
+        return $this->entityManager->updateClaimedImportJobRunProgress($importJobRunTransfer);
     }
 
     /**
@@ -255,6 +293,16 @@ class ImportJobRunImporter implements ImportJobRunImporterInterface
     }
 
     /**
+     * @param resource $stream
+     */
+    protected function getProcessedBytes($stream): ?int
+    {
+        $position = ftell($stream);
+
+        return $position === false ? null : $position;
+    }
+
+    /**
      * @param array<string, array<int, \Generated\Shared\Transfer\EventEntityTransfer>> $collectedPublishEvents
      */
     protected function triggerCollectedPublishEvents(array $collectedPublishEvents): void
@@ -264,8 +312,15 @@ class ImportJobRunImporter implements ImportJobRunImporterInterface
         }
     }
 
-    protected function updateJobRunWithResults(ImportJobRunTransfer $importJobRun, int $processedLines, int $successfulLines, int $failedLines): void
-    {
+    protected function updateJobRunWithResults(
+        ImportJobRunTransfer $importJobRun,
+        int $processedLines,
+        int $successfulLines,
+        int $failedLines,
+        ?int $processedBytes,
+    ): bool {
+        $finishedAt = (new DateTime())->format(static::DATETIME_FORMAT);
+
         $status = $processedLines === 0 || ($successfulLines === 0 && $failedLines > 0)
             ? $this->config->getImportStatusFailed()
             : $this->config->getImportStatusDone();
@@ -275,8 +330,10 @@ class ImportJobRunImporter implements ImportJobRunImporterInterface
             ->setNumberOfProcessedLines($processedLines)
             ->setNumberOfSuccessfullyProcessedLines($successfulLines)
             ->setNumberOfFailedLines($failedLines)
-            ->setImportFinishedAt((new DateTime())->format('Y-m-d H:i:s'));
+            ->setNumberOfProcessedBytes($processedBytes)
+            ->setImportFinishedAt($finishedAt)
+            ->setUpdatedAt($finishedAt);
 
-        $this->entityManager->updateImportJobRun($importJobRun);
+        return $this->entityManager->updateClaimedImportJobRunResult($importJobRun);
     }
 }
