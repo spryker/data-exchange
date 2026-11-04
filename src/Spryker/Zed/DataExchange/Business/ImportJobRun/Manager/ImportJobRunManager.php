@@ -40,19 +40,19 @@ class ImportJobRunManager implements ImportJobRunManagerInterface
     ) {
     }
 
-    public function processNextPendingRun(): void
+    public function processNextPendingRun(): bool
     {
         $importJobRun = $this->importJobRunClaimer->claimNextImportJobRun();
 
         if ($importJobRun === null) {
-            return;
+            return false;
         }
 
         try {
             $this->executePreProcessors($importJobRun);
 
             if (!$this->importer->importJobRun($importJobRun)) {
-                return;
+                return true;
             }
         } catch (Throwable $exception) {
             EventBehaviorConfig::enableEvent();
@@ -62,10 +62,12 @@ class ImportJobRunManager implements ImportJobRunManagerInterface
             );
             $this->markAsFailed($importJobRun, $exception);
 
-            return;
+            return true;
         }
 
         $this->executePostProcessors($importJobRun);
+
+        return true;
     }
 
     protected function markAsFailed(ImportJobRunTransfer $importJobRun, Throwable $exception): void

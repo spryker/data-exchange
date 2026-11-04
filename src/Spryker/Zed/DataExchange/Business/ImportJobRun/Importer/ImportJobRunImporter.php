@@ -18,6 +18,7 @@ use Generated\Shared\Transfer\ImportJobCriteriaTransfer;
 use Generated\Shared\Transfer\ImportJobRunErrorTransfer;
 use Generated\Shared\Transfer\ImportJobRunTransfer;
 use Generated\Shared\Transfer\ImportStepResponseTransfer;
+use Propel\Runtime\Propel;
 use Spryker\Service\FileSystem\FileSystemServiceInterface;
 use Spryker\Zed\DataExchange\Business\ImportJobRun\Importer\Exception\SchemaPluginNotFoundException;
 use Spryker\Zed\DataExchange\Business\ImportJobRun\Mapper\CsvHeaderMapperInterface;
@@ -25,9 +26,11 @@ use Spryker\Zed\DataExchange\Business\SchemaPlugin\SchemaPluginResolverInterface
 use Spryker\Zed\DataExchange\DataExchangeConfig;
 use Spryker\Zed\DataExchange\Persistence\DataExchangeEntityManagerInterface;
 use Spryker\Zed\DataExchange\Persistence\DataExchangeRepositoryInterface;
+use Spryker\Zed\DataExchangeExtension\Dependency\Plugin\CacheResettableImportStepInterface;
 use Spryker\Zed\DataExchangeExtension\Dependency\Plugin\ImportSchemaPluginInterface;
 use Spryker\Zed\Event\Business\EventFacadeInterface;
 use Spryker\Zed\EventBehavior\EventBehaviorConfig;
+use Throwable;
 
 class ImportJobRunImporter implements ImportJobRunImporterInterface
 {
@@ -48,13 +51,26 @@ class ImportJobRunImporter implements ImportJobRunImporterInterface
     {
         $schemaPlugin = $this->resolveSchemaPluginForJobRun($importJobRun);
         $this->csvHeaderMapper->buildMappingRulesFromSchema($schemaPlugin->getSchema());
+        $steps = $schemaPlugin->getImportSteps();
         $stream = $this->openCsvStream($importJobRun);
 
+        // Propel keeps every loaded entity in its instance pool. Disable the pool so memory stays flat.
+        $isInstancePoolingEnabled = Propel::disableInstancePooling();
+
         try {
-            $importResult = $this->readAndProcessCsv($stream, $importJobRun, $schemaPlugin->getImportSteps());
+            $importResult = $this->readAndProcessCsv($stream, $importJobRun, $steps);
+        } catch (Throwable $exception) {
+            // A step that threw mid-batch leaves its caches filled. The next run of this process must start clean.
+            $this->resetStepsCaches($steps);
+
+            throw $exception;
         } finally {
             fclose($stream);
             EventBehaviorConfig::enableEvent();
+
+            if ($isInstancePoolingEnabled) {
+                Propel::enableInstancePooling();
+            }
         }
 
         $this->triggerCollectedPublishEvents($importResult['collectedPublishEvents']);
@@ -127,12 +143,13 @@ class ImportJobRunImporter implements ImportJobRunImporterInterface
         $headers = null;
         $batch = [];
         $rowNumber = 0;
-        $processedLines = 0;
-        $successfulLines = 0;
-        $failedLines = 0;
         $batchSize = $this->config->getImportCsvBatchSize();
-        $batchResults = [];
-        $collectedPublishEvents = [];
+        $totals = [
+            'processedLines' => 0,
+            'successfulLines' => 0,
+            'failedLines' => 0,
+            'collectedPublishEvents' => [],
+        ];
         $isLeaseLost = false;
         $idImportJobRun = $importJobRun->getIdImportJobRunOrFail();
 
@@ -155,8 +172,8 @@ class ImportJobRunImporter implements ImportJobRunImporterInterface
             }
 
             if (count($headers) !== count($rawRow)) {
-                $failedLines++;
-                $processedLines++;
+                $totals['failedLines']++;
+                $totals['processedLines']++;
 
                 $this->recordColumnMismatchError($importJobRun, $rowNumber, count($headers), count($rawRow));
 
@@ -170,11 +187,10 @@ class ImportJobRunImporter implements ImportJobRunImporterInterface
                 continue;
             }
 
-            $batchResults[] = $this->executeBatch($batch, $idImportJobRun, $steps);
-            $processedLines += count($batch);
+            $totals = $this->processBatch($batch, $idImportJobRun, $steps, $totals);
             $batch = [];
 
-            if (!$this->writeProgress($stream, $importJobRun, $processedLines, $failedLines, $batchResults)) {
+            if (!$this->writeProgress($stream, $importJobRun, $totals)) {
                 $isLeaseLost = true;
 
                 break;
@@ -182,43 +198,67 @@ class ImportJobRunImporter implements ImportJobRunImporterInterface
         }
 
         if ($batch !== []) {
-            $batchResults[] = $this->executeBatch($batch, $idImportJobRun, $steps);
-            $processedLines += count($batch);
-            $isLeaseLost = !$this->writeProgress($stream, $importJobRun, $processedLines, $failedLines, $batchResults);
-        }
-
-        foreach ($batchResults as $batchResult) {
-            $successfulLines += $batchResult['successful'];
-            $failedLines += $batchResult['failed'];
-            foreach ($batchResult['publishEvents'] as $eventName => $entityTransfers) {
-                $collectedPublishEvents[$eventName] = ($collectedPublishEvents[$eventName] ?? []) + $entityTransfers;
-            }
+            $totals = $this->processBatch($batch, $idImportJobRun, $steps, $totals);
+            $isLeaseLost = !$this->writeProgress($stream, $importJobRun, $totals);
         }
 
         return [
             'isLeaseLost' => $isLeaseLost,
             'processedBytes' => $this->getProcessedBytes($stream),
-            'processedLines' => $processedLines,
-            'successfulLines' => $successfulLines,
-            'failedLines' => $failedLines,
-            'collectedPublishEvents' => $collectedPublishEvents,
+            'processedLines' => $totals['processedLines'],
+            'successfulLines' => $totals['successfulLines'],
+            'failedLines' => $totals['failedLines'],
+            'collectedPublishEvents' => $totals['collectedPublishEvents'],
         ];
     }
 
     /**
-     * @param resource $stream
-     * @param array<array{successful: int, failed: int, publishEvents: array<string, array<int, \Generated\Shared\Transfer\EventEntityTransfer>>}> $batchResults
+     * Runs one batch through every step, folds its counters and publish events into the running totals and resets
+     * the step caches. Only the deduplicated publish events are kept until the end of the run.
+     *
+     * @phpstan-param array{processedLines: int, successfulLines: int, failedLines: int, collectedPublishEvents: array<string, array<int, \Generated\Shared\Transfer\EventEntityTransfer>>} $totals
+     *
+     * @param array<int, array<string, string>> $batch
+     * @param array<\Spryker\Zed\DataExchangeExtension\Dependency\Plugin\ImportStepInterface> $steps
+     * @param array<string, mixed> $totals
+     *
+     * @return array{processedLines: int, successfulLines: int, failedLines: int, collectedPublishEvents: array<string, array<int, \Generated\Shared\Transfer\EventEntityTransfer>>}
      */
-    protected function writeProgress($stream, ImportJobRunTransfer $importJobRunTransfer, int $processedLines, int $failedLines, array $batchResults): bool
+    protected function processBatch(array $batch, int $idImportJobRun, array $steps, array $totals): array
+    {
+        $batchResult = $this->executeBatch($batch, $idImportJobRun, $steps);
+
+        $totals['processedLines'] += count($batch);
+        $totals['successfulLines'] += $batchResult['successful'];
+        $totals['failedLines'] += $batchResult['failed'];
+
+        foreach ($batchResult['publishEvents'] as $eventName => $entityTransfers) {
+            $totals['collectedPublishEvents'][$eventName] = ($totals['collectedPublishEvents'][$eventName] ?? []) + $entityTransfers;
+        }
+
+        $this->resetStepsCaches($steps);
+
+        return $totals;
+    }
+
+    /**
+     * Writes the running totals and renews the lease; returns `false` when another worker took over the claim.
+     *
+     * @phpstan-param array{processedLines: int, successfulLines: int, failedLines: int, collectedPublishEvents: array<string, array<int, \Generated\Shared\Transfer\EventEntityTransfer>>} $totals
+     *
+     * @param resource $stream
+     * @param array<string, mixed> $totals
+     */
+    protected function writeProgress($stream, ImportJobRunTransfer $importJobRunTransfer, array $totals): bool
     {
         $writtenAt = new DateTime();
         $leaseExpiresAt = (new DateTime('now', new DateTimeZone($this->config->getImportJobRunLeaseTimeZone())))
             ->modify(sprintf('+%d minutes', max(1, $this->config->getImportJobRunLeaseDurationInMinutes())));
 
         $importJobRunTransfer
-            ->setNumberOfProcessedLines($processedLines)
-            ->setNumberOfSuccessfullyProcessedLines(array_sum(array_column($batchResults, 'successful')))
-            ->setNumberOfFailedLines($failedLines + array_sum(array_column($batchResults, 'failed')))
+            ->setNumberOfProcessedLines($totals['processedLines'])
+            ->setNumberOfSuccessfullyProcessedLines($totals['successfulLines'])
+            ->setNumberOfFailedLines($totals['failedLines'])
             ->setNumberOfProcessedBytes($this->getProcessedBytes($stream))
             ->setLeaseExpiresAt($leaseExpiresAt->format(static::DATETIME_FORMAT))
             ->setUpdatedAt($writtenAt->format(static::DATETIME_FORMAT));
@@ -252,6 +292,20 @@ class ImportJobRunImporter implements ImportJobRunImporterInterface
             'failed' => count($failedRowNumbers),
             'publishEvents' => $publishEvents,
         ];
+    }
+
+    /**
+     * Clears the lookup caches of every step that implements `CacheResettableImportStepInterface`.
+     *
+     * @param array<\Spryker\Zed\DataExchangeExtension\Dependency\Plugin\ImportStepInterface> $steps
+     */
+    protected function resetStepsCaches(array $steps): void
+    {
+        foreach ($steps as $step) {
+            if ($step instanceof CacheResettableImportStepInterface) {
+                $step->resetCache();
+            }
+        }
     }
 
     /**

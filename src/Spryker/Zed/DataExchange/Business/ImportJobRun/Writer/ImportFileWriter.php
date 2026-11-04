@@ -10,8 +10,9 @@ declare(strict_types=1);
 namespace Spryker\Zed\DataExchange\Business\ImportJobRun\Writer;
 
 use DateTime;
-use Generated\Shared\Transfer\FileSystemContentTransfer;
+use Generated\Shared\Transfer\FileSystemStreamTransfer;
 use Generated\Shared\Transfer\ImportJobRunFileInfoTransfer;
+use RuntimeException;
 use Spryker\Service\FileSystem\FileSystemServiceInterface;
 use Spryker\Zed\DataExchange\DataExchangeConfig;
 
@@ -29,12 +30,15 @@ class ImportFileWriter implements ImportFileWriterInterface
     {
         $originalFileName = $fileInfoTransfer->getOriginalFileNameOrFail();
         $storedPath = $this->buildStoredPath($jobType, $originalFileName);
-        $content = (string)file_get_contents($fileInfoTransfer->getUploadedFilePathOrFail());
-
         $contentType = $fileInfoTransfer->getContentType() ?? $this->config->getImportDefaultContentType();
 
-        $fileSystemContentTransfer = $this->createFileSystemContentTransfer($storedPath, $content, $contentType);
-        $this->fileSystemService->write($fileSystemContentTransfer);
+        $stream = $this->openUploadedFileStream($fileInfoTransfer->getUploadedFilePathOrFail());
+
+        try {
+            $this->fileSystemService->writeStream($this->createFileSystemStreamTransfer($storedPath, $contentType), $stream);
+        } finally {
+            fclose($stream);
+        }
 
         return $fileInfoTransfer
             ->setFileSystemName($this->config->getImportFileSystemName())
@@ -42,12 +46,29 @@ class ImportFileWriter implements ImportFileWriterInterface
             ->setUploadedFilePath(null);
     }
 
-    protected function createFileSystemContentTransfer(string $storedPath, string $content, string $contentType): FileSystemContentTransfer
+    /**
+     * The upload is handed to the storage as a stream, so a file of any size passes through with flat memory.
+     *
+     * @throws \RuntimeException
+     *
+     * @return resource
+     */
+    protected function openUploadedFileStream(string $uploadedFilePath)
     {
-        return (new FileSystemContentTransfer())
+        $stream = is_readable($uploadedFilePath) ? fopen($uploadedFilePath, 'rb') : false;
+
+        if ($stream === false) {
+            throw new RuntimeException(sprintf('Uploaded import file "%s" could not be opened for reading.', $uploadedFilePath));
+        }
+
+        return $stream;
+    }
+
+    protected function createFileSystemStreamTransfer(string $storedPath, string $contentType): FileSystemStreamTransfer
+    {
+        return (new FileSystemStreamTransfer())
             ->setPath($storedPath)
             ->setFileSystemName($this->config->getImportFileSystemName())
-            ->setContent($content)
             ->setConfig(['ContentType' => $contentType]);
     }
 

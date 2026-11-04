@@ -107,8 +107,9 @@ interface DataExchangeFacadeInterface
      * - Marks the run as done or failed with final counters and finish timestamp; an unhandled exception marks the run as failed and records the message as an error.
      * - Writes the final status only while `claimedBy` still matches the token of this worker; otherwise leaves the run to the other worker, records no error and does not execute post-processors.
      * - Executes post-processor plugins `\Spryker\Zed\DataExchangeExtension\Dependency\Plugin\ImportPostProcessorPluginInterface` after a completed import; a post-processor exception is recorded as an error and keeps the run status.
+     * - Returns `true` when a run was claimed, `false` when no claimable run was left.
      *
      * @api
      */
-    public function processNextPendingRun(): void;
+    public function processNextPendingRun(): bool;
 }

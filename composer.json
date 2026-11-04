@@ -5,7 +5,7 @@
     "license": "proprietary",
     "require": {
         "php": ">=8.3",
-        "spryker/data-exchange-extension": "^0.1.0",
+        "spryker/data-exchange-extension": "^0.2.0",
         "spryker/event": "^2.0.0",
         "spryker/event-behavior": "^1.30.0",
         "spryker/file-system": "^2.0.0",

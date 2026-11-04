@@ -65,6 +65,14 @@ class DataExchangeConfig extends AbstractBundleConfig
 
     /**
      * Specification:
+     * - Defines how many import job runs one `import:job:run` invocation processes before the process exits.
+     * - Bounds the work per process: memory a run leaves behind is released when the process ends, and the next
+     *   invocation continues with the queue.
+     */
+    protected const int IMPORT_JOB_RUNS_PER_INVOCATION = 1;
+
+    /**
+     * Specification:
      * - Defines the number of records fetched per batch during export.
      * - Higher values increase memory usage but reduce the number of database queries.
      * - Lower values reduce memory footprint but increase overall export duration.
@@ -194,6 +202,19 @@ class DataExchangeConfig extends AbstractBundleConfig
     public function getImportCsvBatchSize(): int
     {
         return static::IMPORT_CSV_BATCH_SIZE;
+    }
+
+    /**
+     * Specification:
+     * - Returns how many import jobs run one `import:job:run` invocation processes before the process exits.
+     * - The invocation stops earlier when no pending job is left.
+     * - Must be 1 or greater; `import:job:run` throws an exception otherwise.
+     *
+     * @api
+     */
+    public function getImportJobRunsPerInvocation(): int
+    {
+        return static::IMPORT_JOB_RUNS_PER_INVOCATION;
     }
 
     /**

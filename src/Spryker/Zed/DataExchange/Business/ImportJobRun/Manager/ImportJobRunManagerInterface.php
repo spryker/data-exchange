@@ -12,7 +12,9 @@ namespace Spryker\Zed\DataExchange\Business\ImportJobRun\Manager;
 interface ImportJobRunManagerInterface
 {
     /**
-     * Picks the oldest pending import job run, manages its lifecycle, and delegates CSV import to the importer.
+     * Claims the oldest claimable import job run, manages its lifecycle, and delegates CSV import to the importer.
+     *
+     * @return bool `true` when a run was claimed, `false` when no claimable run was left.
      */
-    public function processNextPendingRun(): void;
+    public function processNextPendingRun(): bool;
 }

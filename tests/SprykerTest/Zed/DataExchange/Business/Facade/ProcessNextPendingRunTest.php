@@ -39,6 +39,7 @@ use Spryker\Zed\EventBehavior\EventBehaviorConfig;
 use SprykerTest\Zed\DataExchange\DataExchangeBusinessTester;
 use SprykerTest\Zed\DataExchange\Plugin\DemoCsvImportSchemaPlugin;
 use SprykerTest\Zed\DataExchange\Plugin\DemoCsvImportStep;
+use SprykerTest\Zed\DataExchange\Plugin\DemoPlainImportStep;
 use Stringable;
 
 /**
@@ -123,9 +124,10 @@ class ProcessNextPendingRunTest extends Unit
         ]);
 
         // Act
-        $this->tester->getFacade()->processNextPendingRun();
+        $isProcessed = $this->tester->getFacade()->processNextPendingRun();
 
         // Assert
+        $this->assertTrue($isProcessed, 'A processed run is reported to the caller');
         $importJobRun = $this->findRun($importJobRun->getIdImportJobRunOrFail());
         $this->assertSame(static::STATUS_DONE, $importJobRun->getStatus());
         $this->assertSame(3, $importJobRun->getNumberOfProcessedLines());
@@ -162,9 +164,10 @@ class ProcessNextPendingRunTest extends Unit
         ]);
 
         // Act
-        $this->tester->getFacade()->processNextPendingRun();
+        $isProcessed = $this->tester->getFacade()->processNextPendingRun();
 
         // Assert
+        $this->assertFalse($isProcessed, 'An empty queue is reported to the caller so the console loop stops');
         $this->assertSame([], $this->demoStep->getReceivedBatches());
     }
 
@@ -647,6 +650,106 @@ class ProcessNextPendingRunTest extends Unit
         $this->assertSame([], $this->findErrors($idImportJobRun));
     }
 
+    public function testResetsEveryStepCacheOnceAfterEachBatch(): void
+    {
+        // Arrange
+        $this->tester->mockConfigMethod('getImportCsvBatchSize', 2);
+        $this->tester->havePendingImportJobRunWithCsvFile($this->rootDirectory, [['sku'], ['sku-1'], ['sku-2'], ['sku-3'], ['sku-4'], ['sku-5']]);
+
+        // Act
+        $this->tester->getFacade()->processNextPendingRun();
+
+        // Assert
+        $this->assertSame(
+            [1, 2, 3],
+            $this->demoStep->getBatchCountAtEachReset(),
+            'resetCache() runs exactly once per batch, after the batch went through the step and before the next one is read',
+        );
+        $this->assertSame(
+            [2, 2, 1],
+            $this->demoStep->getLookupCacheSizeAtEachReset(),
+            'Each reset drops only the lookups of the batch just processed: without the reset the cache would hold 2, 4 and 5 entries',
+        );
+        $this->assertSame([], $this->demoStep->getLookupCache(), 'No lookup survives the last batch');
+    }
+
+    public function testRunsAStepWithoutCacheResetSupportUnchanged(): void
+    {
+        // Arrange
+        $plainStep = new DemoPlainImportStep();
+        $this->registerSchemaPlugin([$this->demoStep, $plainStep]);
+        $this->tester->mockConfigMethod('getImportCsvBatchSize', 2);
+        $importJobRun = $this->tester->havePendingImportJobRunWithCsvFile($this->rootDirectory, [['sku'], ['sku-1'], ['sku-2'], ['sku-3']]);
+
+        // Act
+        $this->tester->getFacade()->processNextPendingRun();
+
+        // Assert
+        $importJobRun = $this->findRun($importJobRun->getIdImportJobRunOrFail());
+        $this->assertSame(static::STATUS_DONE, $importJobRun->getStatus());
+        $this->assertSame(3, $importJobRun->getNumberOfSuccessfullyProcessedLines());
+        $this->assertCount(2, $plainStep->getReceivedBatches(), 'A step that implements ImportStepInterface only still receives every batch');
+        $this->assertSame([1, 2], $this->demoStep->getBatchCountAtEachReset(), 'The cache reset still reaches the steps that opted in');
+    }
+
+    public function testRunsTheStepsWithoutPropelInstancePoolingAndRestoresItAfterwards(): void
+    {
+        // Arrange
+        Propel::enableInstancePooling();
+        $this->tester->mockConfigMethod('getImportCsvBatchSize', 1);
+        $this->tester->havePendingImportJobRunWithCsvFile($this->rootDirectory, [['sku'], ['sku-1'], ['sku-2']]);
+
+        // Act
+        $this->tester->getFacade()->processNextPendingRun();
+
+        // Assert
+        $this->assertSame([false, false], $this->demoStep->getInstancePoolingStateAtEachBatch(), 'Entities loaded by the steps must not be kept in the Propel instance pool');
+        $this->assertTrue(Propel::isInstancePoolingEnabled(), 'Instance pooling is restored once the run is over');
+    }
+
+    public function testLeavesPropelInstancePoolingOffWhenItWasAlreadyOff(): void
+    {
+        // Arrange
+        Propel::disableInstancePooling();
+        $this->tester->havePendingImportJobRunWithCsvFile($this->rootDirectory, [['sku'], ['sku-1']]);
+
+        try {
+            // Act
+            $this->tester->getFacade()->processNextPendingRun();
+
+            // Assert
+            $this->assertSame([false], $this->demoStep->getInstancePoolingStateAtEachBatch());
+            $this->assertFalse(Propel::isInstancePoolingEnabled(), 'The importer only restores a pool it switched off itself');
+        } finally {
+            Propel::enableInstancePooling();
+        }
+    }
+
+    public function testResetsTheStepCachesWhenARunThrowsSoTheNextRunStartsClean(): void
+    {
+        // Arrange
+        $this->tester->mockConfigMethod('getImportCsvBatchSize', 1);
+        $throwingRun = $this->tester->havePendingImportJobRunWithCsvFile($this->rootDirectory, [['sku'], ['sku-1'], ['throw-2']], 'demo-csv/throwing.csv');
+        $cleanRun = $this->tester->havePendingImportJobRunWithCsvFile($this->rootDirectory, [['sku'], ['sku-3'], ['sku-4']], 'demo-csv/clean.csv');
+
+        // Act
+        $isThrowingRunProcessed = $this->tester->getFacade()->processNextPendingRun();
+        $lookupCacheAfterThrowingRun = $this->demoStep->getLookupCache();
+        $isCleanRunProcessed = $this->tester->getFacade()->processNextPendingRun();
+
+        // Assert
+        $this->assertTrue($isThrowingRunProcessed);
+        $this->assertTrue($isCleanRunProcessed);
+        $this->assertSame(static::STATUS_FAILED, $this->findRun($throwingRun->getIdImportJobRunOrFail())->getStatus());
+        $this->assertSame(static::STATUS_DONE, $this->findRun($cleanRun->getIdImportJobRunOrFail())->getStatus());
+        $this->assertSame([], $lookupCacheAfterThrowingRun, 'The lookups of the batch that threw do not survive the failed run');
+        $this->assertSame(
+            [1, 1, 1, 1],
+            $this->demoStep->getLookupCacheSizeAtEachReset(),
+            'The first batch of the next run starts from an empty cache: a leaked lookup would show up as 2',
+        );
+    }
+
     public function testRecordsStepErrorsAndKeepsTheRunDoneWhenSomeRowsSucceed(): void
     {
         // Arrange
@@ -753,19 +856,22 @@ class ProcessNextPendingRunTest extends Unit
     public function testMarksTheRunFailedAndReEnablesEventsWhenAStepThrows(): void
     {
         // Arrange
+        Propel::enableInstancePooling();
         $throwingStep = $this->createMock(ImportStepInterface::class);
         $throwingStep->method('executeBatch')->willThrowException(new RuntimeException('Step exploded.'));
         $this->registerSchemaPlugin([$throwingStep]);
         $importJobRun = $this->tester->havePendingImportJobRunWithCsvFile($this->rootDirectory, [['sku'], ['sku-1']]);
 
         // Act
-        $this->tester->getFacade()->processNextPendingRun();
+        $isProcessed = $this->tester->getFacade()->processNextPendingRun();
 
         // Assert
+        $this->assertTrue($isProcessed, 'A failed run still counts as processed for the console loop');
         $importJobRun = $this->findRun($importJobRun->getIdImportJobRunOrFail());
         $this->assertSame(static::STATUS_FAILED, $importJobRun->getStatus());
         $this->assertNotNull($importJobRun->getImportFinishedAt());
         $this->assertFalse(EventBehaviorConfig::isEventBehaviorDisabled(), 'Events must be re-enabled even when the import throws');
+        $this->assertTrue(Propel::isInstancePoolingEnabled(), 'Instance pooling must be restored even when the import throws');
         $this->assertSame([], $this->triggeredEvents);
 
         $errors = $this->findErrors($importJobRun->getIdImportJobRunOrFail());

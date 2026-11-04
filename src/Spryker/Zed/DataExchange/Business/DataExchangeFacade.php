@@ -94,8 +94,8 @@ class DataExchangeFacade extends AbstractFacade implements DataExchangeFacadeInt
      *
      * @api
      */
-    public function processNextPendingRun(): void
+    public function processNextPendingRun(): bool
     {
-        $this->getFactory()->createImportJobRunManager()->processNextPendingRun();
+        return $this->getFactory()->createImportJobRunManager()->processNextPendingRun();
     }
 }
