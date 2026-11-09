@@ -123,10 +123,15 @@ class DataExchangeMapper
         }
 
         if ($transfer->getFileInfo() !== null) {
-            $entity->setFileInfo((string)$this->utilEncodingService->encodeJson($transfer->getFileInfo()->toArray()));
+            $entity->setFileInfo($this->mapImportJobRunFileInfoTransferToJson($transfer->getFileInfo()));
         }
 
         return $entity;
+    }
+
+    public function mapImportJobRunFileInfoTransferToJson(ImportJobRunFileInfoTransfer $importJobRunFileInfoTransfer): string
+    {
+        return (string)$this->utilEncodingService->encodeJson($importJobRunFileInfoTransfer->toArray());
     }
 
     public function mapImportJobRunErrorEntityToTransfer(SpyImportJobRunError $entity, ImportJobRunErrorTransfer $transfer): ImportJobRunErrorTransfer

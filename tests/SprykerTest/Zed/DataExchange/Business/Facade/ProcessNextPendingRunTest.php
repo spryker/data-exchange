@@ -12,6 +12,7 @@ namespace SprykerTest\Zed\DataExchange\Business\Facade;
 use Codeception\Test\Unit;
 use DateTime;
 use DateTimeZone;
+use Generated\Shared\Transfer\ImportJobRunCollectionTransfer;
 use Generated\Shared\Transfer\ImportJobRunConditionsTransfer;
 use Generated\Shared\Transfer\ImportJobRunCriteriaTransfer;
 use Generated\Shared\Transfer\ImportJobRunErrorConditionsTransfer;
@@ -27,9 +28,13 @@ use Psr\Log\AbstractLogger;
 use RuntimeException;
 use Spryker\Service\FileSystem\FileSystemServiceInterface;
 use Spryker\Zed\DataExchange\Business\ImportJobRun\Claimer\ImportJobRunClaimer;
+use Spryker\Zed\DataExchange\Business\ImportJobRun\Importer\ImportJobRunImporter;
 use Spryker\Zed\DataExchange\Business\ImportJobRun\Manager\ImportJobRunManager;
+use Spryker\Zed\DataExchange\Business\ImportJobRun\Writer\ExhaustedImportJobRunWriter;
 use Spryker\Zed\DataExchange\DataExchangeDependencyProvider;
 use Spryker\Zed\DataExchange\Persistence\DataExchangeEntityManager;
+use Spryker\Zed\DataExchange\Persistence\DataExchangeEntityManagerInterface;
+use Spryker\Zed\DataExchange\Persistence\DataExchangeRepository;
 use Spryker\Zed\DataExchange\Persistence\DataExchangeRepositoryInterface;
 use Spryker\Zed\DataExchangeExtension\Dependency\Plugin\ImportPostProcessorPluginInterface;
 use Spryker\Zed\DataExchangeExtension\Dependency\Plugin\ImportPreProcessorPluginInterface;
@@ -41,6 +46,7 @@ use SprykerTest\Zed\DataExchange\Plugin\DemoCsvImportSchemaPlugin;
 use SprykerTest\Zed\DataExchange\Plugin\DemoCsvImportStep;
 use SprykerTest\Zed\DataExchange\Plugin\DemoPlainImportStep;
 use Stringable;
+use Throwable;
 
 /**
  * Auto-generated group annotations
@@ -55,16 +61,6 @@ use Stringable;
  */
 class ProcessNextPendingRunTest extends Unit
 {
-    protected const string STATUS_PENDING = 'pending';
-
-    protected const string STATUS_DONE = 'done';
-
-    protected const string STATUS_FAILED = 'failed';
-
-    protected const string STATUS_PROCESSING = 'processing';
-
-    protected const string STATUS_RECEIVING = 'receiving';
-
     protected const string FIRST_WORKER = 'first-host:1';
 
     protected const string SECOND_WORKER = 'second-host:2';
@@ -129,7 +125,7 @@ class ProcessNextPendingRunTest extends Unit
         // Assert
         $this->assertTrue($isProcessed, 'A processed run is reported to the caller');
         $importJobRun = $this->findRun($importJobRun->getIdImportJobRunOrFail());
-        $this->assertSame(static::STATUS_DONE, $importJobRun->getStatus());
+        $this->assertSame(DataExchangeBusinessTester::STATUS_DONE, $importJobRun->getStatus());
         $this->assertSame(3, $importJobRun->getNumberOfProcessedLines());
         $this->assertSame(3, $importJobRun->getNumberOfSuccessfullyProcessedLines());
         $this->assertSame(0, $importJobRun->getNumberOfFailedLines());
@@ -160,7 +156,7 @@ class ProcessNextPendingRunTest extends Unit
         $importJob = $this->tester->haveImportJob([ImportJobTransfer::TYPE => DemoCsvImportSchemaPlugin::TYPE]);
         $this->tester->haveImportJobRun([
             ImportJobRunTransfer::FK_IMPORT_JOB => $importJob->getIdImportJob(),
-            ImportJobRunTransfer::STATUS => static::STATUS_DONE,
+            ImportJobRunTransfer::STATUS => DataExchangeBusinessTester::STATUS_DONE,
         ]);
 
         // Act
@@ -183,8 +179,8 @@ class ProcessNextPendingRunTest extends Unit
         $this->tester->getFacade()->processNextPendingRun();
 
         // Assert
-        $this->assertSame(static::STATUS_DONE, $this->findRun($olderRun->getIdImportJobRunOrFail())->getStatus());
-        $this->assertSame(static::STATUS_PENDING, $this->findRun($newerRun->getIdImportJobRunOrFail())->getStatus());
+        $this->assertSame(DataExchangeBusinessTester::STATUS_DONE, $this->findRun($olderRun->getIdImportJobRunOrFail())->getStatus());
+        $this->assertSame(DataExchangeBusinessTester::STATUS_PENDING, $this->findRun($newerRun->getIdImportJobRunOrFail())->getStatus());
     }
 
     public function testClaimsThePendingRunWithALeaseBeforeImportingIt(): void
@@ -197,7 +193,7 @@ class ProcessNextPendingRunTest extends Unit
 
         // Assert
         $importJobRun = $this->findRun($importJobRun->getIdImportJobRunOrFail());
-        $this->assertSame(static::STATUS_DONE, $importJobRun->getStatus());
+        $this->assertSame(DataExchangeBusinessTester::STATUS_DONE, $importJobRun->getStatus());
         $this->assertSame(1, $importJobRun->getAttemptCount());
         $this->assertNotEmpty($importJobRun->getClaimedBy());
         $this->assertNotNull($importJobRun->getLeaseExpiresAt());
@@ -208,7 +204,7 @@ class ProcessNextPendingRunTest extends Unit
     {
         // Arrange
         $importJobRun = $this->tester->havePendingImportJobRunWithCsvFile($this->rootDirectory, [['sku'], ['sku-1']], DataExchangeBusinessTester::CSV_STORED_PATH, [
-            ImportJobRunTransfer::STATUS => static::STATUS_PROCESSING,
+            ImportJobRunTransfer::STATUS => DataExchangeBusinessTester::STATUS_PROCESSING,
             ImportJobRunTransfer::CLAIMED_BY => static::DEAD_WORKER,
             ImportJobRunTransfer::LEASE_EXPIRES_AT => $this->formatLeaseTime('-1 minute'),
             ImportJobRunTransfer::ATTEMPT_COUNT => 1,
@@ -219,7 +215,7 @@ class ProcessNextPendingRunTest extends Unit
 
         // Assert
         $importJobRun = $this->findRun($importJobRun->getIdImportJobRunOrFail());
-        $this->assertSame(static::STATUS_DONE, $importJobRun->getStatus());
+        $this->assertSame(DataExchangeBusinessTester::STATUS_DONE, $importJobRun->getStatus());
         $this->assertSame(2, $importJobRun->getAttemptCount());
         $this->assertNotSame(static::DEAD_WORKER, $importJobRun->getClaimedBy());
         $this->assertSame([[2 => ['sku' => 'sku-1']]], $this->demoStep->getReceivedBatches());
@@ -229,7 +225,7 @@ class ProcessNextPendingRunTest extends Unit
     {
         // Arrange
         $importJobRunTransfer = $this->tester->havePendingImportJobRunWithCsvFile($this->rootDirectory, [['sku'], ['sku-1']], DataExchangeBusinessTester::CSV_STORED_PATH, [
-            ImportJobRunTransfer::STATUS => static::STATUS_PROCESSING,
+            ImportJobRunTransfer::STATUS => DataExchangeBusinessTester::STATUS_PROCESSING,
             ImportJobRunTransfer::CLAIMED_BY => static::DEAD_WORKER,
             ImportJobRunTransfer::LEASE_EXPIRES_AT => $this->formatLeaseTime('-1 minute'),
             ImportJobRunTransfer::ATTEMPT_COUNT => 1,
@@ -258,7 +254,7 @@ class ProcessNextPendingRunTest extends Unit
     {
         // Arrange
         $importJobRun = $this->tester->havePendingImportJobRunWithCsvFile($this->rootDirectory, [['sku'], ['sku-1']], DataExchangeBusinessTester::CSV_STORED_PATH, [
-            ImportJobRunTransfer::STATUS => static::STATUS_PROCESSING,
+            ImportJobRunTransfer::STATUS => DataExchangeBusinessTester::STATUS_PROCESSING,
             ImportJobRunTransfer::CLAIMED_BY => static::LIVE_WORKER,
             ImportJobRunTransfer::LEASE_EXPIRES_AT => $this->formatLeaseTime('+1 minute'),
             ImportJobRunTransfer::ATTEMPT_COUNT => 1,
@@ -269,7 +265,7 @@ class ProcessNextPendingRunTest extends Unit
 
         // Assert
         $importJobRun = $this->findRun($importJobRun->getIdImportJobRunOrFail());
-        $this->assertSame(static::STATUS_PROCESSING, $importJobRun->getStatus());
+        $this->assertSame(DataExchangeBusinessTester::STATUS_PROCESSING, $importJobRun->getStatus());
         $this->assertSame(static::LIVE_WORKER, $importJobRun->getClaimedBy());
         $this->assertSame(1, $importJobRun->getAttemptCount());
         $this->assertSame([], $this->demoStep->getReceivedBatches());
@@ -279,7 +275,7 @@ class ProcessNextPendingRunTest extends Unit
     {
         // Arrange
         $importJobRun = $this->tester->havePendingImportJobRunWithCsvFile($this->rootDirectory, [['sku'], ['sku-1']], DataExchangeBusinessTester::CSV_STORED_PATH, [
-            ImportJobRunTransfer::STATUS => static::STATUS_PROCESSING,
+            ImportJobRunTransfer::STATUS => DataExchangeBusinessTester::STATUS_PROCESSING,
             ImportJobRunTransfer::CLAIMED_BY => static::LIVE_WORKER,
             ImportJobRunTransfer::LEASE_EXPIRES_AT => $this->formatLeaseTime('+1 minute'),
             ImportJobRunTransfer::ATTEMPT_COUNT => 1,
@@ -296,18 +292,230 @@ class ProcessNextPendingRunTest extends Unit
 
         // Assert
         $importJobRun = $this->findRun($importJobRun->getIdImportJobRunOrFail());
-        $this->assertSame(static::STATUS_PROCESSING, $importJobRun->getStatus());
+        $this->assertSame(DataExchangeBusinessTester::STATUS_PROCESSING, $importJobRun->getStatus());
         $this->assertSame(static::LIVE_WORKER, $importJobRun->getClaimedBy());
         $this->assertSame([], $this->demoStep->getReceivedBatches());
     }
 
-    public function testDoesNotClaimARunThatReachedTheMaximumNumberOfAttempts(): void
+    public function testMarksAnAbandonedRunFailedWithOneErrorWhenItReachedTheMaximumNumberOfAttempts(): void
     {
         // Arrange
         $this->tester->mockConfigMethod('getImportJobRunMaxAttempts', 2);
-        $importJobRun = $this->tester->havePendingImportJobRunWithCsvFile($this->rootDirectory, [['sku'], ['sku-1']], DataExchangeBusinessTester::CSV_STORED_PATH, [
-            ImportJobRunTransfer::STATUS => static::STATUS_PROCESSING,
+        $importJobRunTransfer = $this->haveAbandonedImportJobRun(2, '-1 minute');
+
+        // Act
+        $this->tester->getFacade()->processNextPendingRun();
+
+        // Assert
+        $importJobRunTransfer = $this->findRun($importJobRunTransfer->getIdImportJobRunOrFail());
+        $this->assertSame(DataExchangeBusinessTester::STATUS_FAILED, $importJobRunTransfer->getStatus());
+        $this->assertSame(2, $importJobRunTransfer->getAttemptCount());
+        $this->assertNotNull($importJobRunTransfer->getImportFinishedAt());
+        $this->assertSame([], $this->demoStep->getReceivedBatches());
+
+        $importJobRunErrorTransfers = $this->findErrors($importJobRunTransfer->getIdImportJobRunOrFail());
+        $this->assertCount(1, $importJobRunErrorTransfers);
+        $this->assertNull($importJobRunErrorTransfers[0]->getCsvRowNumber());
+        $this->assertSame('Import stopped after 2 attempts: every attempt ended before the run was finished.', $importJobRunErrorTransfers[0]->getErrorMessage());
+    }
+
+    public function testAWorkerWithAStaleReadOfAnExhaustedRunDoesNotFailItAgainOrRecordAnErrorAfterAnotherWorkerMarkedItFailed(): void
+    {
+        // Arrange
+        $this->tester->mockConfigMethod('getImportJobRunMaxAttempts', 2);
+        $importJobRunTransfer = $this->haveAbandonedImportJobRun(2, '-1 minute');
+        $secondExhaustedImportJobRunWriter = $this->createExhaustedImportJobRunWriterSeeingRun($this->findRun($importJobRunTransfer->getIdImportJobRunOrFail()));
+        $failedAt = $this->markRunFailedByAnotherWorker($importJobRunTransfer->getIdImportJobRunOrFail());
+
+        // Act
+        $secondExhaustedImportJobRunWriter->failExhaustedImportJobRuns();
+
+        // Assert
+        $failedImportJobRunTransfer = $this->findRun($importJobRunTransfer->getIdImportJobRunOrFail());
+        $this->assertSame(DataExchangeBusinessTester::STATUS_FAILED, $failedImportJobRunTransfer->getStatus());
+        $this->assertSame($failedAt, $failedImportJobRunTransfer->getImportFinishedAt());
+        $this->assertSame([], $this->findErrors($importJobRunTransfer->getIdImportJobRunOrFail()));
+    }
+
+    public function testMarksAnAbandonedRunWhoseLeaseIsNotSetFailedWhenItReachedTheMaximumNumberOfAttempts(): void
+    {
+        // Arrange
+        $this->tester->mockConfigMethod('getImportJobRunMaxAttempts', 2);
+        $importJobRunTransfer = $this->haveAbandonedImportJobRun(2, null);
+
+        // Act
+        $this->tester->getFacade()->processNextPendingRun();
+
+        // Assert
+        $this->assertSame(DataExchangeBusinessTester::STATUS_FAILED, $this->findRun($importJobRunTransfer->getIdImportJobRunOrFail())->getStatus());
+    }
+
+    public function testNeverClaimsOrFailsAgainARunThatWasMarkedFailedAfterTheMaximumNumberOfAttempts(): void
+    {
+        // Arrange
+        $this->tester->mockConfigMethod('getImportJobRunMaxAttempts', 2);
+        $importJobRunTransfer = $this->haveAbandonedImportJobRun(2, '-1 minute');
+        $this->tester->getFacade()->processNextPendingRun();
+
+        // Act
+        $this->tester->getFacade()->processNextPendingRun();
+
+        // Assert
+        $importJobRunTransfer = $this->findRun($importJobRunTransfer->getIdImportJobRunOrFail());
+        $this->assertSame(DataExchangeBusinessTester::STATUS_FAILED, $importJobRunTransfer->getStatus());
+        $this->assertSame(2, $importJobRunTransfer->getAttemptCount());
+        $this->assertCount(1, $this->findErrors($importJobRunTransfer->getIdImportJobRunOrFail()));
+        $this->assertSame([], $this->demoStep->getReceivedBatches());
+    }
+
+    public function testMarksAnAbandonedRunFailedWhenItsAttemptsExceedTheLoweredMaximumNumberOfAttempts(): void
+    {
+        // Arrange
+        $this->tester->mockConfigMethod('getImportJobRunMaxAttempts', 2);
+        $importJobRunTransfer = $this->haveAbandonedImportJobRun(3, '-1 minute');
+
+        // Act
+        $this->tester->getFacade()->processNextPendingRun();
+
+        // Assert
+        $importJobRunTransfer = $this->findRun($importJobRunTransfer->getIdImportJobRunOrFail());
+        $this->assertSame(DataExchangeBusinessTester::STATUS_FAILED, $importJobRunTransfer->getStatus());
+        $this->assertSame(3, $importJobRunTransfer->getAttemptCount());
+        $this->assertCount(1, $this->findErrors($importJobRunTransfer->getIdImportJobRunOrFail()));
+        $this->assertSame([], $this->demoStep->getReceivedBatches());
+    }
+
+    /**
+     * @dataProvider provideFinalStatuses
+     */
+    public function testNeverClaimsAFinishedRunWhoseLeaseHasExpired(string $finalStatus): void
+    {
+        // Arrange
+        $importJobRunTransfer = $this->tester->havePendingImportJobRunWithCsvFile($this->rootDirectory, [['sku'], ['sku-1']], DataExchangeBusinessTester::CSV_STORED_PATH, [
+            ImportJobRunTransfer::STATUS => $finalStatus,
             ImportJobRunTransfer::CLAIMED_BY => static::DEAD_WORKER,
+            ImportJobRunTransfer::LEASE_EXPIRES_AT => $this->formatLeaseTime('-1 minute'),
+            ImportJobRunTransfer::ATTEMPT_COUNT => 1,
+        ]);
+
+        // Act
+        $isProcessed = $this->tester->getFacade()->processNextPendingRun();
+
+        // Assert
+        $this->assertFalse($isProcessed);
+        $importJobRunTransfer = $this->findRun($importJobRunTransfer->getIdImportJobRunOrFail());
+        $this->assertSame($finalStatus, $importJobRunTransfer->getStatus());
+        $this->assertSame(1, $importJobRunTransfer->getAttemptCount());
+        $this->assertSame([], $this->findErrors($importJobRunTransfer->getIdImportJobRunOrFail()));
+        $this->assertSame([], $this->demoStep->getReceivedBatches());
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function provideFinalStatuses(): array
+    {
+        return [
+            'done' => [DataExchangeBusinessTester::STATUS_DONE],
+            'imported with errors' => [DataExchangeBusinessTester::STATUS_IMPORTED_WITH_ERRORS],
+            'failed' => [DataExchangeBusinessTester::STATUS_FAILED],
+        ];
+    }
+
+    public function testDoesNotFailARunThatReachedTheMaximumNumberOfAttemptsWhileItsLeaseIsActive(): void
+    {
+        // Arrange
+        $this->tester->mockConfigMethod('getImportJobRunMaxAttempts', 2);
+        $importJobRunTransfer = $this->haveAbandonedImportJobRun(2, '+5 minutes');
+
+        // Act
+        $this->tester->getFacade()->processNextPendingRun();
+
+        // Assert
+        $importJobRunTransfer = $this->findRun($importJobRunTransfer->getIdImportJobRunOrFail());
+        $this->assertSame(DataExchangeBusinessTester::STATUS_PROCESSING, $importJobRunTransfer->getStatus());
+        $this->assertSame([], $this->findErrors($importJobRunTransfer->getIdImportJobRunOrFail()));
+    }
+
+    public function testDoesNotFailAnAbandonedRunBelowTheMaximumNumberOfAttempts(): void
+    {
+        // Arrange
+        $this->tester->mockConfigMethod('getImportJobRunMaxAttempts', 2);
+        $importJobRunTransfer = $this->haveAbandonedImportJobRun(1, '-1 minute');
+
+        // Act
+        $this->tester->getFacade()->processNextPendingRun();
+
+        // Assert
+        $importJobRunTransfer = $this->findRun($importJobRunTransfer->getIdImportJobRunOrFail());
+        $this->assertSame(DataExchangeBusinessTester::STATUS_DONE, $importJobRunTransfer->getStatus());
+        $this->assertSame(2, $importJobRunTransfer->getAttemptCount());
+        $this->assertSame([], $this->findErrors($importJobRunTransfer->getIdImportJobRunOrFail()));
+    }
+
+    /**
+     * @disableTransaction
+     */
+    public function testFailsTheOtherExhaustedRunsWhenFailingOneOfThemThrows(): void
+    {
+        // Arrange
+        $this->tester->mockConfigMethod('getImportJobRunMaxAttempts', 2);
+        $brokenImportJobRunTransfer = $this->haveAbandonedImportJobRun(2, '-1 minute');
+        $exhaustedImportJobRunTransfer = $this->haveAbandonedImportJobRun(2, '-1 minute');
+        $exhaustedImportJobRunWriter = $this->createExhaustedImportJobRunWriterSeeingRun(
+            $this->findRun($brokenImportJobRunTransfer->getIdImportJobRunOrFail())->setAttemptCount(null),
+            $this->findRun($exhaustedImportJobRunTransfer->getIdImportJobRunOrFail()),
+        );
+
+        // Act
+        $exhaustedImportJobRunWriter->failExhaustedImportJobRuns();
+
+        // Assert
+        $this->assertSame(DataExchangeBusinessTester::STATUS_PROCESSING, $this->findRun($brokenImportJobRunTransfer->getIdImportJobRunOrFail())->getStatus());
+        $this->assertSame([], $this->findErrors($brokenImportJobRunTransfer->getIdImportJobRunOrFail()));
+        $this->assertSame(DataExchangeBusinessTester::STATUS_FAILED, $this->findRun($exhaustedImportJobRunTransfer->getIdImportJobRunOrFail())->getStatus());
+        $this->assertCount(1, $this->findErrors($exhaustedImportJobRunTransfer->getIdImportJobRunOrFail()));
+    }
+
+    /**
+     * @dataProvider provideExhaustedBatchSizesOfOne
+     */
+    public function testMarksOnlyTheOldestExhaustedRunFailedPerCallAndTheNextOneByTheNextCall(int $exhaustedBatchSize): void
+    {
+        // Arrange
+        $this->tester->mockConfigMethod('getImportJobRunMaxAttempts', 2);
+        $this->tester->mockConfigMethod('getImportJobRunExhaustedBatchSize', $exhaustedBatchSize);
+        $oldestImportJobRunTransfer = $this->haveAbandonedImportJobRun(2, '-1 minute');
+        $newestImportJobRunTransfer = $this->haveAbandonedImportJobRun(2, '-1 minute');
+
+        // Act
+        $this->tester->getFacade()->processNextPendingRun();
+        $newestStatusAfterFirstCall = $this->findRun($newestImportJobRunTransfer->getIdImportJobRunOrFail())->getStatus();
+        $this->tester->getFacade()->processNextPendingRun();
+
+        // Assert
+        $this->assertSame(DataExchangeBusinessTester::STATUS_PROCESSING, $newestStatusAfterFirstCall);
+        $this->assertSame(DataExchangeBusinessTester::STATUS_FAILED, $this->findRun($oldestImportJobRunTransfer->getIdImportJobRunOrFail())->getStatus());
+        $this->assertSame(DataExchangeBusinessTester::STATUS_FAILED, $this->findRun($newestImportJobRunTransfer->getIdImportJobRunOrFail())->getStatus());
+    }
+
+    /**
+     * @return array<string, array{int}>
+     */
+    public static function provideExhaustedBatchSizesOfOne(): array
+    {
+        return [
+            'batch size 1' => [1],
+            'batch size 0 is treated as 1' => [0],
+        ];
+    }
+
+    public function testLeavesAReceivingRunAloneWhenItsAttemptsReachedTheMaximumAndItsLeaseExpired(): void
+    {
+        // Arrange
+        $this->tester->mockConfigMethod('getImportJobRunMaxAttempts', 2);
+        $receivingImportJobRunTransfer = $this->tester->havePendingImportJobRunWithCsvFile($this->rootDirectory, [['sku'], ['sku-1']], DataExchangeBusinessTester::CSV_STORED_PATH, [
+            ImportJobRunTransfer::STATUS => DataExchangeBusinessTester::STATUS_RECEIVING,
             ImportJobRunTransfer::LEASE_EXPIRES_AT => $this->formatLeaseTime('-1 minute'),
             ImportJobRunTransfer::ATTEMPT_COUNT => 2,
         ]);
@@ -316,10 +524,70 @@ class ProcessNextPendingRunTest extends Unit
         $this->tester->getFacade()->processNextPendingRun();
 
         // Assert
-        $importJobRun = $this->findRun($importJobRun->getIdImportJobRunOrFail());
-        $this->assertSame(static::STATUS_PROCESSING, $importJobRun->getStatus());
-        $this->assertSame(2, $importJobRun->getAttemptCount());
-        $this->assertSame([], $this->demoStep->getReceivedBatches());
+        $receivingImportJobRunTransfer = $this->findRun($receivingImportJobRunTransfer->getIdImportJobRunOrFail());
+        $this->assertSame(DataExchangeBusinessTester::STATUS_RECEIVING, $receivingImportJobRunTransfer->getStatus());
+        $this->assertNull($receivingImportJobRunTransfer->getImportFinishedAt());
+        $this->assertSame([], $this->findErrors($receivingImportJobRunTransfer->getIdImportJobRunOrFail()));
+    }
+
+    public function testImportsAPendingRunInTheSameCallThatMarksAnExhaustedRunFailed(): void
+    {
+        // Arrange
+        $this->tester->mockConfigMethod('getImportJobRunMaxAttempts', 2);
+        $exhaustedImportJobRunTransfer = $this->haveAbandonedImportJobRun(2, '-1 minute');
+        $pendingImportJobRunTransfer = $this->tester->havePendingImportJobRunWithCsvFile($this->rootDirectory, [['sku'], ['sku-1']]);
+
+        // Act
+        $this->tester->getFacade()->processNextPendingRun();
+
+        // Assert
+        $this->assertSame(DataExchangeBusinessTester::STATUS_FAILED, $this->findRun($exhaustedImportJobRunTransfer->getIdImportJobRunOrFail())->getStatus());
+        $this->assertSame(DataExchangeBusinessTester::STATUS_DONE, $this->findRun($pendingImportJobRunTransfer->getIdImportJobRunOrFail())->getStatus());
+    }
+
+    public function testStopsTheImportAndKeepsTheRunFailedWhenItWasMarkedFailedWhileItWasProcessing(): void
+    {
+        // Arrange
+        $this->tester->mockConfigMethod('getImportCsvBatchSize', 1);
+        $importJobRunTransfer = $this->tester->havePendingImportJobRunWithCsvFile($this->rootDirectory, [['sku'], ['sku-1'], ['sku-2'], ['sku-3']]);
+        $idImportJobRun = $importJobRunTransfer->getIdImportJobRunOrFail();
+        $numberOfExecutedBatches = 0;
+        $this->registerSchemaPlugin([$this->createStepRunningBeforeEachBatch(function () use ($idImportJobRun, &$numberOfExecutedBatches): void {
+            $numberOfExecutedBatches++;
+            SpyImportJobRunQuery::create()
+                ->filterByIdImportJobRun($idImportJobRun)
+                ->update(['Status' => DataExchangeBusinessTester::STATUS_FAILED]);
+        })]);
+
+        // Act
+        $this->tester->getFacade()->processNextPendingRun();
+
+        // Assert
+        $importJobRunTransfer = $this->findRun($idImportJobRun);
+        $this->assertSame(1, $numberOfExecutedBatches);
+        $this->assertSame(DataExchangeBusinessTester::STATUS_FAILED, $importJobRunTransfer->getStatus());
+        $this->assertSame(0, $importJobRunTransfer->getNumberOfProcessedLines());
+        $this->assertNull($importJobRunTransfer->getImportFinishedAt());
+    }
+
+    public function testKeepsTheRunFailedWhenItWasMarkedFailedDuringTheLastBatch(): void
+    {
+        // Arrange
+        $importJobRunTransfer = $this->tester->havePendingImportJobRunWithCsvFile($this->rootDirectory, [['sku'], ['sku-1']]);
+        $idImportJobRun = $importJobRunTransfer->getIdImportJobRunOrFail();
+        $this->registerSchemaPlugin([$this->createStepRunningBeforeEachBatch(function () use ($idImportJobRun): void {
+            SpyImportJobRunQuery::create()
+                ->filterByIdImportJobRun($idImportJobRun)
+                ->update(['Status' => DataExchangeBusinessTester::STATUS_FAILED]);
+        })]);
+
+        // Act
+        $this->tester->getFacade()->processNextPendingRun();
+
+        // Assert
+        $importJobRunTransfer = $this->findRun($idImportJobRun);
+        $this->assertSame(DataExchangeBusinessTester::STATUS_FAILED, $importJobRunTransfer->getStatus());
+        $this->assertNull($importJobRunTransfer->getImportFinishedAt());
     }
 
     public function testClaimsAFreshPendingRunWhoseLeaseIsNotSet(): void
@@ -334,7 +602,7 @@ class ProcessNextPendingRunTest extends Unit
 
         // Assert
         $importJobRun = $this->findRun($importJobRun->getIdImportJobRunOrFail());
-        $this->assertSame(static::STATUS_DONE, $importJobRun->getStatus());
+        $this->assertSame(DataExchangeBusinessTester::STATUS_DONE, $importJobRun->getStatus());
         $this->assertSame(1, $importJobRun->getAttemptCount());
     }
 
@@ -342,7 +610,7 @@ class ProcessNextPendingRunTest extends Unit
     {
         // Arrange
         $importJobRun = $this->tester->havePendingImportJobRunWithCsvFile($this->rootDirectory, [['sku'], ['sku-1']], DataExchangeBusinessTester::CSV_STORED_PATH, [
-            ImportJobRunTransfer::STATUS => static::STATUS_PROCESSING,
+            ImportJobRunTransfer::STATUS => DataExchangeBusinessTester::STATUS_PROCESSING,
             ImportJobRunTransfer::CLAIMED_BY => static::DEAD_WORKER,
             ImportJobRunTransfer::LEASE_EXPIRES_AT => null,
             ImportJobRunTransfer::ATTEMPT_COUNT => 1,
@@ -353,7 +621,7 @@ class ProcessNextPendingRunTest extends Unit
 
         // Assert
         $importJobRun = $this->findRun($importJobRun->getIdImportJobRunOrFail());
-        $this->assertSame(static::STATUS_DONE, $importJobRun->getStatus());
+        $this->assertSame(DataExchangeBusinessTester::STATUS_DONE, $importJobRun->getStatus());
         $this->assertSame(2, $importJobRun->getAttemptCount());
     }
 
@@ -370,7 +638,7 @@ class ProcessNextPendingRunTest extends Unit
 
         // Assert
         $importJobRun = $this->findRun($importJobRun->getIdImportJobRunOrFail());
-        $this->assertSame(static::STATUS_DONE, $importJobRun->getStatus());
+        $this->assertSame(DataExchangeBusinessTester::STATUS_DONE, $importJobRun->getStatus());
         $this->assertSame(2, $importJobRun->getAttemptCount());
     }
 
@@ -387,7 +655,7 @@ class ProcessNextPendingRunTest extends Unit
 
         // Assert
         $importJobRun = $this->findRun($importJobRun->getIdImportJobRunOrFail());
-        $this->assertSame(static::STATUS_PENDING, $importJobRun->getStatus());
+        $this->assertSame(DataExchangeBusinessTester::STATUS_PENDING, $importJobRun->getStatus());
         $this->assertSame(2, $importJobRun->getAttemptCount());
         $this->assertSame([], $this->demoStep->getReceivedBatches());
     }
@@ -415,7 +683,7 @@ class ProcessNextPendingRunTest extends Unit
     {
         // Arrange
         $receivingRun = $this->tester->havePendingImportJobRunWithCsvFile($this->rootDirectory, [['sku'], ['sku-receiving']], 'demo-csv/receiving.csv', [
-            ImportJobRunTransfer::STATUS => static::STATUS_RECEIVING,
+            ImportJobRunTransfer::STATUS => DataExchangeBusinessTester::STATUS_RECEIVING,
             ImportJobRunTransfer::LEASE_EXPIRES_AT => $this->formatLeaseTime('-1 day'),
         ]);
         $pendingRun = $this->tester->havePendingImportJobRunWithCsvFile($this->rootDirectory, [['sku'], ['sku-pending']], 'demo-csv/pending.csv');
@@ -426,9 +694,9 @@ class ProcessNextPendingRunTest extends Unit
 
         // Assert
         $receivingRun = $this->findRun($receivingRun->getIdImportJobRunOrFail());
-        $this->assertSame(static::STATUS_RECEIVING, $receivingRun->getStatus());
+        $this->assertSame(DataExchangeBusinessTester::STATUS_RECEIVING, $receivingRun->getStatus());
         $this->assertSame(0, $receivingRun->getAttemptCount());
-        $this->assertSame(static::STATUS_DONE, $this->findRun($pendingRun->getIdImportJobRunOrFail())->getStatus());
+        $this->assertSame(DataExchangeBusinessTester::STATUS_DONE, $this->findRun($pendingRun->getIdImportJobRunOrFail())->getStatus());
         $this->assertSame([[2 => ['sku' => 'sku-pending']]], $this->demoStep->getReceivedBatches());
     }
 
@@ -504,7 +772,7 @@ class ProcessNextPendingRunTest extends Unit
         // Assert
         $this->assertSame([0, 1, 2], $processedLinesSeenByBatch);
         $importJobRunTransfer = $this->findRun($idImportJobRun);
-        $this->assertSame(static::STATUS_DONE, $importJobRunTransfer->getStatus());
+        $this->assertSame(DataExchangeBusinessTester::STATUS_DONE, $importJobRunTransfer->getStatus());
         $this->assertSame(3, $importJobRunTransfer->getNumberOfProcessedLines());
         $this->assertSame($importJobRunTransfer->getFileInfoOrFail()->getSize(), $importJobRunTransfer->getNumberOfProcessedBytes());
         $this->assertSame(100.0, $importJobRunTransfer->getProgressPercentage());
@@ -562,7 +830,7 @@ class ProcessNextPendingRunTest extends Unit
         // Assert
         $importJobRunTransfer = $this->findRun($idImportJobRun);
         $this->assertSame(1, $numberOfExecutedBatches);
-        $this->assertSame(static::STATUS_PROCESSING, $importJobRunTransfer->getStatus());
+        $this->assertSame(DataExchangeBusinessTester::STATUS_PROCESSING, $importJobRunTransfer->getStatus());
         $this->assertSame(static::LIVE_WORKER, $importJobRunTransfer->getClaimedBy());
         $this->assertSame(0, $importJobRunTransfer->getNumberOfProcessedLines());
         $this->assertNull($importJobRunTransfer->getImportFinishedAt());
@@ -594,7 +862,7 @@ class ProcessNextPendingRunTest extends Unit
         // Assert
         $importJobRunTransfer = $this->findRun($idImportJobRun);
         $this->assertSame(2, $numberOfExecutedBatches);
-        $this->assertSame(static::STATUS_DONE, $importJobRunTransfer->getStatus());
+        $this->assertSame(DataExchangeBusinessTester::STATUS_DONE, $importJobRunTransfer->getStatus());
         $this->assertSame(static::LIVE_WORKER, $importJobRunTransfer->getClaimedBy());
         $this->assertSame(static::LIVE_WORKER_FINISHED_AT, $importJobRunTransfer->getImportFinishedAt());
         $this->assertSame(static::LIVE_WORKER_NUMBER_OF_LINES, $importJobRunTransfer->getNumberOfProcessedLines());
@@ -620,7 +888,7 @@ class ProcessNextPendingRunTest extends Unit
 
         // Assert
         $importJobRunTransfer = $this->findRun($idImportJobRun);
-        $this->assertSame(static::STATUS_DONE, $importJobRunTransfer->getStatus());
+        $this->assertSame(DataExchangeBusinessTester::STATUS_DONE, $importJobRunTransfer->getStatus());
         $this->assertSame(static::LIVE_WORKER, $importJobRunTransfer->getClaimedBy());
         $this->assertSame(static::LIVE_WORKER_FINISHED_AT, $importJobRunTransfer->getImportFinishedAt());
         $this->assertSame(static::LIVE_WORKER_NUMBER_OF_LINES, $importJobRunTransfer->getNumberOfProcessedLines());
@@ -644,7 +912,7 @@ class ProcessNextPendingRunTest extends Unit
 
         // Assert
         $importJobRunTransfer = $this->findRun($idImportJobRun);
-        $this->assertSame(static::STATUS_PROCESSING, $importJobRunTransfer->getStatus());
+        $this->assertSame(DataExchangeBusinessTester::STATUS_PROCESSING, $importJobRunTransfer->getStatus());
         $this->assertSame(static::LIVE_WORKER, $importJobRunTransfer->getClaimedBy());
         $this->assertNull($importJobRunTransfer->getImportFinishedAt());
         $this->assertSame([], $this->findErrors($idImportJobRun));
@@ -686,7 +954,7 @@ class ProcessNextPendingRunTest extends Unit
 
         // Assert
         $importJobRun = $this->findRun($importJobRun->getIdImportJobRunOrFail());
-        $this->assertSame(static::STATUS_DONE, $importJobRun->getStatus());
+        $this->assertSame(DataExchangeBusinessTester::STATUS_DONE, $importJobRun->getStatus());
         $this->assertSame(3, $importJobRun->getNumberOfSuccessfullyProcessedLines());
         $this->assertCount(2, $plainStep->getReceivedBatches(), 'A step that implements ImportStepInterface only still receives every batch');
         $this->assertSame([1, 2], $this->demoStep->getBatchCountAtEachReset(), 'The cache reset still reaches the steps that opted in');
@@ -740,8 +1008,8 @@ class ProcessNextPendingRunTest extends Unit
         // Assert
         $this->assertTrue($isThrowingRunProcessed);
         $this->assertTrue($isCleanRunProcessed);
-        $this->assertSame(static::STATUS_FAILED, $this->findRun($throwingRun->getIdImportJobRunOrFail())->getStatus());
-        $this->assertSame(static::STATUS_DONE, $this->findRun($cleanRun->getIdImportJobRunOrFail())->getStatus());
+        $this->assertSame(DataExchangeBusinessTester::STATUS_FAILED, $this->findRun($throwingRun->getIdImportJobRunOrFail())->getStatus());
+        $this->assertSame(DataExchangeBusinessTester::STATUS_DONE, $this->findRun($cleanRun->getIdImportJobRunOrFail())->getStatus());
         $this->assertSame([], $lookupCacheAfterThrowingRun, 'The lookups of the batch that threw do not survive the failed run');
         $this->assertSame(
             [1, 1, 1, 1],
@@ -750,7 +1018,7 @@ class ProcessNextPendingRunTest extends Unit
         );
     }
 
-    public function testRecordsStepErrorsAndKeepsTheRunDoneWhenSomeRowsSucceed(): void
+    public function testRecordsStepErrorsAndMarksTheRunImportedWithErrorsWhenSomeRowsSucceed(): void
     {
         // Arrange
         $importJobRun = $this->tester->havePendingImportJobRunWithCsvFile($this->rootDirectory, [['sku'], ['sku-1'], ['fail-2'], ['sku-3']]);
@@ -760,7 +1028,7 @@ class ProcessNextPendingRunTest extends Unit
 
         // Assert
         $importJobRun = $this->findRun($importJobRun->getIdImportJobRunOrFail());
-        $this->assertSame(static::STATUS_DONE, $importJobRun->getStatus());
+        $this->assertSame(DataExchangeBusinessTester::STATUS_IMPORTED_WITH_ERRORS, $importJobRun->getStatus());
         $this->assertSame(3, $importJobRun->getNumberOfProcessedLines());
         $this->assertSame(2, $importJobRun->getNumberOfSuccessfullyProcessedLines());
         $this->assertSame(1, $importJobRun->getNumberOfFailedLines());
@@ -781,11 +1049,28 @@ class ProcessNextPendingRunTest extends Unit
 
         // Assert
         $importJobRun = $this->findRun($importJobRun->getIdImportJobRunOrFail());
-        $this->assertSame(static::STATUS_FAILED, $importJobRun->getStatus());
+        $this->assertSame(DataExchangeBusinessTester::STATUS_FAILED, $importJobRun->getStatus());
         $this->assertSame(2, $importJobRun->getNumberOfFailedLines());
     }
 
-    public function testMarksTheRunFailedWhenTheFileHasOnlyAHeaderRow(): void
+    public function testMarksTheRunImportedWithErrorsWhenAFailedBatchIsFollowedByASuccessfulBatch(): void
+    {
+        // Arrange
+        $this->tester->mockConfigMethod('getImportCsvBatchSize', 1);
+        $importJobRunTransfer = $this->tester->havePendingImportJobRunWithCsvFile($this->rootDirectory, [['sku'], ['fail-1'], ['sku-2']]);
+
+        // Act
+        $this->tester->getFacade()->processNextPendingRun();
+
+        // Assert
+        $importJobRunTransfer = $this->findRun($importJobRunTransfer->getIdImportJobRunOrFail());
+        $this->assertSame(DataExchangeBusinessTester::STATUS_IMPORTED_WITH_ERRORS, $importJobRunTransfer->getStatus());
+        $this->assertSame(2, $importJobRunTransfer->getNumberOfProcessedLines());
+        $this->assertSame(1, $importJobRunTransfer->getNumberOfSuccessfullyProcessedLines());
+        $this->assertSame(1, $importJobRunTransfer->getNumberOfFailedLines());
+    }
+
+    public function testMarksTheRunFailedWithOneErrorWhenTheFileHasOnlyAHeaderRow(): void
     {
         // Arrange
         $importJobRun = $this->tester->havePendingImportJobRunWithCsvFile($this->rootDirectory, [['sku', 'name.en-US']]);
@@ -795,9 +1080,34 @@ class ProcessNextPendingRunTest extends Unit
 
         // Assert
         $importJobRun = $this->findRun($importJobRun->getIdImportJobRunOrFail());
-        $this->assertSame(static::STATUS_FAILED, $importJobRun->getStatus());
+        $this->assertSame(DataExchangeBusinessTester::STATUS_FAILED, $importJobRun->getStatus());
         $this->assertSame(0, $importJobRun->getNumberOfProcessedLines());
         $this->assertSame($importJobRun->getFileInfoOrFail()->getSize(), $importJobRun->getNumberOfProcessedBytes());
+
+        $importJobRunErrorTransfers = $this->findErrors($importJobRun->getIdImportJobRunOrFail());
+        $this->assertCount(1, $importJobRunErrorTransfers);
+        $this->assertSame('The file has no rows to import.', $importJobRunErrorTransfers[0]->getErrorMessage());
+    }
+
+    /**
+     * @disableTransaction
+     */
+    public function testKeepsTheRunProcessingWithoutAFinalStatusWhenTheNoRowsErrorCannotBeWritten(): void
+    {
+        // Arrange
+        $importJobRun = $this->tester->havePendingImportJobRunWithCsvFile($this->rootDirectory, [['sku', 'name.en-US']]);
+        (new DataExchangeEntityManager())->updateClaimableImportJobRun($this->createClaim($importJobRun, static::FIRST_WORKER), $this->formatLeaseTime('now'), $this->getMaxAttempts());
+        $importJobRunImporter = $this->createImportJobRunImporterFailingToWriteErrors();
+
+        // Act
+        $thrownException = $this->captureThrownException(fn () => $importJobRunImporter->importJobRun($this->findRun($importJobRun->getIdImportJobRunOrFail())));
+
+        // Assert
+        $this->assertInstanceOf(RuntimeException::class, $thrownException);
+        $importJobRun = $this->findRun($importJobRun->getIdImportJobRunOrFail());
+        $this->assertSame(DataExchangeBusinessTester::STATUS_PROCESSING, $importJobRun->getStatus());
+        $this->assertNull($importJobRun->getImportFinishedAt());
+        $this->assertSame([], $this->findErrors($importJobRun->getIdImportJobRunOrFail()));
     }
 
     public function testStoresZeroProcessedBytesAndNoProgressPercentageWhenTheFileIsEmpty(): void
@@ -810,7 +1120,7 @@ class ProcessNextPendingRunTest extends Unit
 
         // Assert
         $importJobRun = $this->findRun($importJobRun->getIdImportJobRunOrFail());
-        $this->assertSame(static::STATUS_FAILED, $importJobRun->getStatus());
+        $this->assertSame(DataExchangeBusinessTester::STATUS_FAILED, $importJobRun->getStatus());
         $this->assertSame(0, $importJobRun->getNumberOfProcessedLines());
         $this->assertSame(0, $importJobRun->getNumberOfProcessedBytes());
         $this->assertNull($importJobRun->getProgressPercentage());
@@ -827,7 +1137,7 @@ class ProcessNextPendingRunTest extends Unit
 
         // Assert
         $importJobRun = $this->findRun($importJobRun->getIdImportJobRunOrFail());
-        $this->assertSame(static::STATUS_DONE, $importJobRun->getStatus());
+        $this->assertSame(DataExchangeBusinessTester::STATUS_IMPORTED_WITH_ERRORS, $importJobRun->getStatus());
         $this->assertSame($importJobRun->getFileInfoOrFail()->getSize(), $importJobRun->getNumberOfProcessedBytes());
         $this->assertSame(100.0, $importJobRun->getProgressPercentage());
     }
@@ -842,7 +1152,7 @@ class ProcessNextPendingRunTest extends Unit
 
         // Assert
         $importJobRun = $this->findRun($importJobRun->getIdImportJobRunOrFail());
-        $this->assertSame(static::STATUS_DONE, $importJobRun->getStatus());
+        $this->assertSame(DataExchangeBusinessTester::STATUS_IMPORTED_WITH_ERRORS, $importJobRun->getStatus());
         $this->assertSame(3, $importJobRun->getNumberOfProcessedLines());
         $this->assertSame(2, $importJobRun->getNumberOfSuccessfullyProcessedLines());
         $this->assertSame(1, $importJobRun->getNumberOfFailedLines());
@@ -851,6 +1161,22 @@ class ProcessNextPendingRunTest extends Unit
         $this->assertCount(1, $errors);
         $this->assertSame(3, $errors[0]->getCsvRowNumber());
         $this->assertSame('Column count mismatch: expected 2 columns, got 1.', $errors[0]->getErrorMessage());
+    }
+
+    public function testSkipsBlankLinesAndKeepsTheRunDone(): void
+    {
+        // Arrange
+        $importJobRun = $this->tester->havePendingImportJobRunWithCsvFile($this->rootDirectory, [['sku', 'name.en-US'], ['sku-1', 'Name 1'], [], ['sku-2', 'Name 2'], [], []]);
+
+        // Act
+        $this->tester->getFacade()->processNextPendingRun();
+
+        // Assert
+        $importJobRun = $this->findRun($importJobRun->getIdImportJobRunOrFail());
+        $this->assertSame(DataExchangeBusinessTester::STATUS_DONE, $importJobRun->getStatus());
+        $this->assertSame(2, $importJobRun->getNumberOfProcessedLines());
+        $this->assertSame(0, $importJobRun->getNumberOfFailedLines());
+        $this->assertCount(0, $this->findErrors($importJobRun->getIdImportJobRunOrFail()));
     }
 
     public function testMarksTheRunFailedAndReEnablesEventsWhenAStepThrows(): void
@@ -868,7 +1194,7 @@ class ProcessNextPendingRunTest extends Unit
         // Assert
         $this->assertTrue($isProcessed, 'A failed run still counts as processed for the console loop');
         $importJobRun = $this->findRun($importJobRun->getIdImportJobRunOrFail());
-        $this->assertSame(static::STATUS_FAILED, $importJobRun->getStatus());
+        $this->assertSame(DataExchangeBusinessTester::STATUS_FAILED, $importJobRun->getStatus());
         $this->assertNotNull($importJobRun->getImportFinishedAt());
         $this->assertFalse(EventBehaviorConfig::isEventBehaviorDisabled(), 'Events must be re-enabled even when the import throws');
         $this->assertTrue(Propel::isInstancePoolingEnabled(), 'Instance pooling must be restored even when the import throws');
@@ -890,7 +1216,7 @@ class ProcessNextPendingRunTest extends Unit
 
         // Assert
         $importJobRun = $this->findRun($importJobRun->getIdImportJobRunOrFail());
-        $this->assertSame(static::STATUS_FAILED, $importJobRun->getStatus());
+        $this->assertSame(DataExchangeBusinessTester::STATUS_FAILED, $importJobRun->getStatus());
 
         $errors = $this->findErrors($importJobRun->getIdImportJobRunOrFail());
         $this->assertCount(1, $errors);
@@ -944,7 +1270,7 @@ class ProcessNextPendingRunTest extends Unit
 
         // Assert
         $importJobRunTransfer = $this->findRun($importJobRunTransfer->getIdImportJobRunOrFail());
-        $this->assertSame(static::STATUS_DONE, $importJobRunTransfer->getStatus());
+        $this->assertSame(DataExchangeBusinessTester::STATUS_DONE, $importJobRunTransfer->getStatus());
         $this->assertSame(1, $importJobRunTransfer->getNumberOfSuccessfullyProcessedLines());
         $importJobRunErrorTransfers = $this->findErrors($importJobRunTransfer->getIdImportJobRunOrFail());
         $this->assertCount(1, $importJobRunErrorTransfers);
@@ -979,7 +1305,7 @@ class ProcessNextPendingRunTest extends Unit
         SpyImportJobRunQuery::create()
             ->filterByIdImportJobRun($idImportJobRun)
             ->update([
-                'Status' => static::STATUS_DONE,
+                'Status' => DataExchangeBusinessTester::STATUS_DONE,
                 'ClaimedBy' => static::LIVE_WORKER,
                 'ImportFinishedAt' => static::LIVE_WORKER_FINISHED_AT,
                 'NumberOfProcessedLines' => static::LIVE_WORKER_NUMBER_OF_LINES,
@@ -994,7 +1320,7 @@ class ProcessNextPendingRunTest extends Unit
 
         return (new ImportJobRunTransfer())
             ->setIdImportJobRun($importJobRunTransfer->getIdImportJobRunOrFail())
-            ->setStatus(static::STATUS_PROCESSING)
+            ->setStatus(DataExchangeBusinessTester::STATUS_PROCESSING)
             ->setClaimedBy($claimedBy)
             ->setAttemptCount(1)
             ->setImportStartedAt($claimedAt)
@@ -1003,6 +1329,16 @@ class ProcessNextPendingRunTest extends Unit
             ->setNumberOfSuccessfullyProcessedLines(0)
             ->setNumberOfFailedLines(0)
             ->setUpdatedAt($claimedAt);
+    }
+
+    protected function haveAbandonedImportJobRun(int $attemptCount, ?string $relativeLeaseExpiresAt): ImportJobRunTransfer
+    {
+        return $this->tester->havePendingImportJobRunWithCsvFile($this->rootDirectory, [['sku'], ['sku-1']], DataExchangeBusinessTester::CSV_STORED_PATH, [
+            ImportJobRunTransfer::STATUS => DataExchangeBusinessTester::STATUS_PROCESSING,
+            ImportJobRunTransfer::CLAIMED_BY => static::DEAD_WORKER,
+            ImportJobRunTransfer::LEASE_EXPIRES_AT => $relativeLeaseExpiresAt === null ? null : $this->formatLeaseTime($relativeLeaseExpiresAt),
+            ImportJobRunTransfer::ATTEMPT_COUNT => $attemptCount,
+        ]);
     }
 
     protected function formatLeaseTime(string $relativeTime): string
@@ -1025,13 +1361,77 @@ class ProcessNextPendingRunTest extends Unit
         $config = $this->tester->getModuleConfig();
 
         return new ImportJobRunManager(
-            new ImportJobRunClaimer($repositoryMock, $entityManager, $config),
+            new ImportJobRunClaimer($repositoryMock, $entityManager, $config, $this->tester->getFactory()->createImportJobRunClaimSettingsResolver()),
+            $this->tester->getFactory()->createExhaustedImportJobRunWriter(),
             $entityManager,
             $this->tester->getFactory()->createImportJobRunImporter(),
             $config,
             [],
             [],
         );
+    }
+
+    protected function createExhaustedImportJobRunWriterSeeingRun(ImportJobRunTransfer ...$importJobRunTransfers): ExhaustedImportJobRunWriter
+    {
+        $importJobRunCollectionTransfer = new ImportJobRunCollectionTransfer();
+
+        foreach ($importJobRunTransfers as $importJobRunTransfer) {
+            $importJobRunCollectionTransfer->addImportJobRun($importJobRunTransfer);
+        }
+
+        $repositoryMock = $this->createMock(DataExchangeRepositoryInterface::class);
+        $repositoryMock->method('getExhaustedImportJobRunCollection')->willReturn($importJobRunCollectionTransfer);
+
+        return new ExhaustedImportJobRunWriter(
+            $repositoryMock,
+            new DataExchangeEntityManager(),
+            $this->tester->getModuleConfig(),
+            $this->tester->getFactory()->createImportJobRunClaimSettingsResolver(),
+        );
+    }
+
+    protected function createImportJobRunImporterFailingToWriteErrors(): ImportJobRunImporter
+    {
+        $dataExchangeEntityManager = new DataExchangeEntityManager();
+        $entityManagerMock = $this->createMock(DataExchangeEntityManagerInterface::class);
+        $entityManagerMock->method('updateClaimedImportJobRun')->willReturnCallback(
+            fn (ImportJobRunTransfer $importJobRunTransfer): bool => $dataExchangeEntityManager->updateClaimedImportJobRun($importJobRunTransfer),
+        );
+        $entityManagerMock->method('createImportJobRunError')->willThrowException(new RuntimeException('The error row cannot be written.'));
+        $factory = $this->tester->getFactory();
+
+        return new ImportJobRunImporter(
+            new DataExchangeRepository(),
+            $entityManagerMock,
+            $factory->getFileSystemService(),
+            $factory->getEventFacade(),
+            $this->tester->getModuleConfig(),
+            $factory->createCsvHeaderMapper(),
+            $factory->createSchemaPluginResolver(),
+            $factory->createImportJobRunClaimSettingsResolver(),
+        );
+    }
+
+    protected function captureThrownException(callable $callback): ?Throwable
+    {
+        try {
+            $callback();
+        } catch (Throwable $exception) {
+            return $exception;
+        }
+
+        return null;
+    }
+
+    protected function markRunFailedByAnotherWorker(int $idImportJobRun): string
+    {
+        $failedAt = (new DateTime('-1 minute'))->format(static::DATETIME_FORMAT);
+
+        SpyImportJobRunQuery::create()
+            ->filterByIdImportJobRun($idImportJobRun)
+            ->update(['Status' => DataExchangeBusinessTester::STATUS_FAILED, 'ImportFinishedAt' => $failedAt]);
+
+        return $failedAt;
     }
 
     protected function mockFileSystemServiceExpectingNoRead(): void

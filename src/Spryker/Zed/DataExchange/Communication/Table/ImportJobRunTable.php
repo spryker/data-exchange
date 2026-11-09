@@ -38,6 +38,8 @@ class ImportJobRunTable extends AbstractTable
 
     protected const string ROUTE_RUN_DETAIL = '/data-exchange/run/detail';
 
+    protected const string TEMPLATE_RUN_STATUS_LABEL = '@DataExchange/_partials/run-status-label.twig';
+
     public function __construct(
         protected int $idImportJob,
         protected UtilDateTimeServiceInterface $utilDateTimeService,
@@ -66,7 +68,7 @@ class ImportJobRunTable extends AbstractTable
             static::COL_CREATED_AT,
         ]);
 
-        $config->setRawColumns([static::COL_ACTIONS]);
+        $config->setRawColumns([static::COL_STATUS, static::COL_ACTIONS]);
         $config->setDefaultSortField(static::COL_CREATED_AT, TableConfiguration::SORT_DESC);
 
         return $config;
@@ -84,7 +86,7 @@ class ImportJobRunTable extends AbstractTable
         foreach ($queryResults as $item) {
             $results[] = [
                 static::COL_ID => $item[static::COL_ID],
-                static::COL_STATUS => $item[static::COL_STATUS],
+                static::COL_STATUS => $this->buildStatusLabel($item[static::COL_STATUS]),
                 static::COL_PROCESSED => $item[static::COL_PROCESSED],
                 static::COL_SUCCESSFUL => $item[static::COL_SUCCESSFUL],
                 static::COL_FAILED => $item[static::COL_FAILED],
@@ -96,6 +98,14 @@ class ImportJobRunTable extends AbstractTable
         }
 
         return $results;
+    }
+
+    protected function buildStatusLabel(string $status): string
+    {
+        /** @var \Twig\Environment $twig */
+        $twig = $this->getApplicationContainer()->get(static::SERVICE_TWIG);
+
+        return $twig->render(static::TEMPLATE_RUN_STATUS_LABEL, ['status' => $status]);
     }
 
     /**

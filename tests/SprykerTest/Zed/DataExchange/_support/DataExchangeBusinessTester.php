@@ -47,6 +47,18 @@ class DataExchangeBusinessTester extends Actor
 
     public const string CSV_STORED_PATH = 'demo-csv/import.csv';
 
+    public const string STATUS_RECEIVING = 'receiving';
+
+    public const string STATUS_PENDING = 'pending';
+
+    public const string STATUS_PROCESSING = 'processing';
+
+    public const string STATUS_DONE = 'done';
+
+    public const string STATUS_IMPORTED_WITH_ERRORS = 'imported_with_errors';
+
+    public const string STATUS_FAILED = 'failed';
+
     /**
      * Points both engine file systems at a fresh local directory and returns its absolute path.
      * Module tests resolve the core `FileSystemDependencyProvider`, whose plugin getters throw, so the Flysystem plugins

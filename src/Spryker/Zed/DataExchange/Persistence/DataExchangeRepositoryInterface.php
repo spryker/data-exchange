@@ -25,5 +25,7 @@ interface DataExchangeRepositoryInterface
 
     public function findOldestClaimableImportJobRun(string $leaseCheckedAt, int $maxAttempts): ?ImportJobRunTransfer;
 
+    public function getExhaustedImportJobRunCollection(string $leaseCheckedAt, int $maxAttempts, int $limit): ImportJobRunCollectionTransfer;
+
     public function getImportJobRunErrorCollection(ImportJobRunErrorCriteriaTransfer $criteriaTransfer): ImportJobRunErrorCollectionTransfer;
 }

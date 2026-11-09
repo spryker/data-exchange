@@ -10,7 +10,6 @@ declare(strict_types=1);
 namespace Spryker\Zed\DataExchange\Business\ImportJobRun\Importer;
 
 use DateTime;
-use DateTimeZone;
 use Generated\Shared\Transfer\EventEntityTransfer;
 use Generated\Shared\Transfer\FileSystemStreamTransfer;
 use Generated\Shared\Transfer\ImportJobConditionsTransfer;
@@ -22,6 +21,7 @@ use Propel\Runtime\Propel;
 use Spryker\Service\FileSystem\FileSystemServiceInterface;
 use Spryker\Zed\DataExchange\Business\ImportJobRun\Importer\Exception\SchemaPluginNotFoundException;
 use Spryker\Zed\DataExchange\Business\ImportJobRun\Mapper\CsvHeaderMapperInterface;
+use Spryker\Zed\DataExchange\Business\ImportJobRun\Resolver\ImportJobRunClaimSettingsResolverInterface;
 use Spryker\Zed\DataExchange\Business\SchemaPlugin\SchemaPluginResolverInterface;
 use Spryker\Zed\DataExchange\DataExchangeConfig;
 use Spryker\Zed\DataExchange\Persistence\DataExchangeEntityManagerInterface;
@@ -30,11 +30,16 @@ use Spryker\Zed\DataExchangeExtension\Dependency\Plugin\CacheResettableImportSte
 use Spryker\Zed\DataExchangeExtension\Dependency\Plugin\ImportSchemaPluginInterface;
 use Spryker\Zed\Event\Business\EventFacadeInterface;
 use Spryker\Zed\EventBehavior\EventBehaviorConfig;
+use Spryker\Zed\Kernel\Persistence\EntityManager\TransactionTrait;
 use Throwable;
 
 class ImportJobRunImporter implements ImportJobRunImporterInterface
 {
+    use TransactionTrait;
+
     protected const string DATETIME_FORMAT = 'Y-m-d H:i:s';
+
+    protected const string ERROR_MESSAGE_NO_ROWS_TO_IMPORT = 'The file has no rows to import.';
 
     public function __construct(
         protected DataExchangeRepositoryInterface $repository,
@@ -44,6 +49,7 @@ class ImportJobRunImporter implements ImportJobRunImporterInterface
         protected DataExchangeConfig $config,
         protected CsvHeaderMapperInterface $csvHeaderMapper,
         protected SchemaPluginResolverInterface $schemaPluginResolver,
+        protected ImportJobRunClaimSettingsResolverInterface $importJobRunClaimSettingsResolver,
     ) {
     }
 
@@ -79,7 +85,34 @@ class ImportJobRunImporter implements ImportJobRunImporterInterface
             return false;
         }
 
-        return $this->updateJobRunWithResults($importJobRun, $importResult['processedLines'], $importResult['successfulLines'], $importResult['failedLines'], $importResult['processedBytes']);
+        return $this->getTransactionHandler()->handleTransaction(function () use ($importJobRun, $importResult): bool {
+            return $this->executeWriteFinalStatusTransaction($importJobRun, $importResult);
+        });
+    }
+
+    /**
+     * @phpstan-param array{isLeaseLost: bool, processedBytes: int|null, processedLines: int, successfulLines: int, failedLines: int, collectedPublishEvents: array<string, array<int, \Generated\Shared\Transfer\EventEntityTransfer>>} $importResult
+     *
+     * @param array<string, mixed> $importResult
+     */
+    protected function executeWriteFinalStatusTransaction(ImportJobRunTransfer $importJobRun, array $importResult): bool
+    {
+        $isFinalStatusWritten = $this->updateJobRunWithResults($importJobRun, $importResult['processedLines'], $importResult['successfulLines'], $importResult['failedLines'], $importResult['processedBytes']);
+
+        if ($isFinalStatusWritten && $importResult['processedLines'] === 0) {
+            $this->recordNoRowsToImportError($importJobRun);
+        }
+
+        return $isFinalStatusWritten;
+    }
+
+    protected function recordNoRowsToImportError(ImportJobRunTransfer $importJobRun): void
+    {
+        $this->entityManager->createImportJobRunError(
+            (new ImportJobRunErrorTransfer())
+                ->setFkImportJobRun($importJobRun->getIdImportJobRunOrFail())
+                ->setErrorMessage(static::ERROR_MESSAGE_NO_ROWS_TO_IMPORT),
+        );
     }
 
     /**
@@ -116,6 +149,14 @@ class ImportJobRunImporter implements ImportJobRunImporterInterface
         }
 
         return $schemaPlugin;
+    }
+
+    /**
+     * @param array<int, string|null> $rawRow
+     */
+    protected function isBlankLine(array $rawRow): bool
+    {
+        return $rawRow === [null];
     }
 
     protected function recordColumnMismatchError(ImportJobRunTransfer $importJobRun, int $rowNumber, int $expectedCount, int $actualCount): void
@@ -163,6 +204,10 @@ class ImportJobRunImporter implements ImportJobRunImporterInterface
             }
 
             $rowNumber++;
+
+            if ($this->isBlankLine($rawRow)) {
+                continue;
+            }
 
             if ($headers === null) {
                 $headers = array_map(static fn (?string $value): string => (string)$value, $rawRow);
@@ -252,18 +297,16 @@ class ImportJobRunImporter implements ImportJobRunImporterInterface
     protected function writeProgress($stream, ImportJobRunTransfer $importJobRunTransfer, array $totals): bool
     {
         $writtenAt = new DateTime();
-        $leaseExpiresAt = (new DateTime('now', new DateTimeZone($this->config->getImportJobRunLeaseTimeZone())))
-            ->modify(sprintf('+%d minutes', max(1, $this->config->getImportJobRunLeaseDurationInMinutes())));
 
         $importJobRunTransfer
             ->setNumberOfProcessedLines($totals['processedLines'])
             ->setNumberOfSuccessfullyProcessedLines($totals['successfulLines'])
             ->setNumberOfFailedLines($totals['failedLines'])
             ->setNumberOfProcessedBytes($this->getProcessedBytes($stream))
-            ->setLeaseExpiresAt($leaseExpiresAt->format(static::DATETIME_FORMAT))
+            ->setLeaseExpiresAt($this->importJobRunClaimSettingsResolver->getLeaseExpiresAt())
             ->setUpdatedAt($writtenAt->format(static::DATETIME_FORMAT));
 
-        return $this->entityManager->updateClaimedImportJobRunProgress($importJobRunTransfer);
+        return $this->entityManager->updateClaimedImportJobRun($importJobRunTransfer);
     }
 
     /**
@@ -375,12 +418,8 @@ class ImportJobRunImporter implements ImportJobRunImporterInterface
     ): bool {
         $finishedAt = (new DateTime())->format(static::DATETIME_FORMAT);
 
-        $status = $processedLines === 0 || ($successfulLines === 0 && $failedLines > 0)
-            ? $this->config->getImportStatusFailed()
-            : $this->config->getImportStatusDone();
-
         $importJobRun
-            ->setStatus($status)
+            ->setStatus($this->resolveFinalStatus($successfulLines, $failedLines))
             ->setNumberOfProcessedLines($processedLines)
             ->setNumberOfSuccessfullyProcessedLines($successfulLines)
             ->setNumberOfFailedLines($failedLines)
@@ -388,6 +427,19 @@ class ImportJobRunImporter implements ImportJobRunImporterInterface
             ->setImportFinishedAt($finishedAt)
             ->setUpdatedAt($finishedAt);
 
-        return $this->entityManager->updateClaimedImportJobRunResult($importJobRun);
+        return $this->entityManager->updateClaimedImportJobRun($importJobRun);
+    }
+
+    protected function resolveFinalStatus(int $successfulLines, int $failedLines): string
+    {
+        if ($successfulLines === 0) {
+            return $this->config->getImportStatusFailed();
+        }
+
+        if ($failedLines > 0) {
+            return $this->config->getImportStatusImportedWithErrors();
+        }
+
+        return $this->config->getImportStatusDone();
     }
 }

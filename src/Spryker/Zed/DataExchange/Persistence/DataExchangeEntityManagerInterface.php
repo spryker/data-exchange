@@ -21,11 +21,13 @@ interface DataExchangeEntityManagerInterface
 
     public function createImportJobRun(ImportJobRunTransfer $importJobRunTransfer): ImportJobRunTransfer;
 
+    public function updateReceivingImportJobRun(ImportJobRunTransfer $importJobRunTransfer): bool;
+
     public function updateClaimableImportJobRun(ImportJobRunTransfer $importJobRunTransfer, string $leaseCheckedAt, int $maxAttempts): bool;
 
-    public function updateClaimedImportJobRunProgress(ImportJobRunTransfer $importJobRunTransfer): bool;
-
-    public function updateClaimedImportJobRunResult(ImportJobRunTransfer $importJobRunTransfer): bool;
+    public function updateClaimedImportJobRun(ImportJobRunTransfer $importJobRunTransfer): bool;
 
     public function createImportJobRunError(ImportJobRunErrorTransfer $importJobRunErrorTransfer): ImportJobRunErrorTransfer;
+
+    public function updateExhaustedImportJobRun(ImportJobRunTransfer $importJobRunTransfer, string $leaseCheckedAt, int $maxAttempts): bool;
 }

@@ -15,7 +15,14 @@ class DataExchangeConfig extends AbstractBundleConfig
 {
     /**
      * Specification:
-     * - Defines the status value assigned to a newly created import job run.
+     * - Defines the status value of an import job run whose file is still being stored.
+     * - Import job runs in this status are never claimed by the import consumer.
+     */
+    protected const string IMPORT_STATUS_RECEIVING = 'receiving';
+
+    /**
+     * Specification:
+     * - Defines the status value assigned to an import job run once its file is stored.
      * - Import job runs in this status are queued for processing by the import consumer.
      */
     protected const string IMPORT_STATUS_PENDING = 'pending';
@@ -40,6 +47,12 @@ class DataExchangeConfig extends AbstractBundleConfig
      * - Assigned when all rows fail or an unrecoverable error occurs during import.
      */
     protected const string IMPORT_STATUS_FAILED = 'failed';
+
+    /**
+     * Specification:
+     * - Defines the status value for a completed import job run where some rows succeeded and some failed.
+     */
+    protected const string IMPORT_STATUS_IMPORTED_WITH_ERRORS = 'imported_with_errors';
 
     /**
      * Specification:
@@ -116,9 +129,27 @@ class DataExchangeConfig extends AbstractBundleConfig
 
     /**
      * Specification:
+     * - Defines how many import job runs that used up their attempts are marked failed per invocation.
+     */
+    protected const int IMPORT_JOB_RUN_EXHAUSTED_BATCH_SIZE = 100;
+
+    /**
+     * Specification:
      * - Defines the time zone in which import job run lease timestamps are written and compared.
      */
     protected const string IMPORT_JOB_RUN_LEASE_TIME_ZONE = 'UTC';
+
+    /**
+     * Specification:
+     * - Returns the status value representing an import job run whose file is still being stored.
+     * - Used to reserve the run before its file is written; such a run is never claimed.
+     *
+     * @api
+     */
+    public function getImportStatusReceiving(): string
+    {
+        return static::IMPORT_STATUS_RECEIVING;
+    }
 
     /**
      * Specification:
@@ -166,6 +197,17 @@ class DataExchangeConfig extends AbstractBundleConfig
     public function getImportStatusFailed(): string
     {
         return static::IMPORT_STATUS_FAILED;
+    }
+
+    /**
+     * Specification:
+     * - Returns the status value representing a completed import job run where some rows succeeded and some failed.
+     *
+     * @api
+     */
+    public function getImportStatusImportedWithErrors(): string
+    {
+        return static::IMPORT_STATUS_IMPORTED_WITH_ERRORS;
     }
 
     /**
@@ -287,6 +329,7 @@ class DataExchangeConfig extends AbstractBundleConfig
      * - A processing run whose lease has expired is considered abandoned and can be reclaimed.
      * - The lease is renewed after every batch, so it must exceed the longest expected time between two renewals: the pre-processors plus the first batch, or any later batch.
      * - Otherwise a live run is reclaimed by another worker; lower the batch size from `getImportCsvBatchSize()` when one batch can take longer than the lease.
+     * - A value below 1 is treated as 1.
      *
      * @api
      */
@@ -299,12 +342,26 @@ class DataExchangeConfig extends AbstractBundleConfig
      * Specification:
      * - Returns how many times an import job run may be claimed.
      * - A run that reached this number of attempts is no longer claimed.
+     * - A value below 1 is treated as 1.
      *
      * @api
      */
     public function getImportJobRunMaxAttempts(): int
     {
         return static::IMPORT_JOB_RUN_MAX_ATTEMPTS;
+    }
+
+    /**
+     * Specification:
+     * - Returns how many abandoned import job runs that used up their attempts are marked failed per invocation.
+     * - The remaining runs are marked failed by the next invocations.
+     * - A value below 1 is treated as 1.
+     *
+     * @api
+     */
+    public function getImportJobRunExhaustedBatchSize(): int
+    {
+        return static::IMPORT_JOB_RUN_EXHAUSTED_BATCH_SIZE;
     }
 
     /**

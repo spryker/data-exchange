@@ -28,6 +28,10 @@ use Spryker\Zed\DataExchange\Business\ImportJobRun\Mapper\CsvHeaderMapper;
 use Spryker\Zed\DataExchange\Business\ImportJobRun\Mapper\CsvHeaderMapperInterface;
 use Spryker\Zed\DataExchange\Business\ImportJobRun\Reader\ImportJobRunReader;
 use Spryker\Zed\DataExchange\Business\ImportJobRun\Reader\ImportJobRunReaderInterface;
+use Spryker\Zed\DataExchange\Business\ImportJobRun\Resolver\ImportJobRunClaimSettingsResolver;
+use Spryker\Zed\DataExchange\Business\ImportJobRun\Resolver\ImportJobRunClaimSettingsResolverInterface;
+use Spryker\Zed\DataExchange\Business\ImportJobRun\Writer\ExhaustedImportJobRunWriter;
+use Spryker\Zed\DataExchange\Business\ImportJobRun\Writer\ExhaustedImportJobRunWriterInterface;
 use Spryker\Zed\DataExchange\Business\ImportJobRun\Writer\ImportFileWriter;
 use Spryker\Zed\DataExchange\Business\ImportJobRun\Writer\ImportFileWriterInterface;
 use Spryker\Zed\DataExchange\Business\ImportJobRun\Writer\ImportJobRunWriter;
@@ -49,6 +53,7 @@ class DataExchangeBusinessFactory extends AbstractBusinessFactory
     {
         return new ImportJobRunManager(
             $this->createImportJobRunClaimer(),
+            $this->createExhaustedImportJobRunWriter(),
             $this->getEntityManager(),
             $this->createImportJobRunImporter(),
             $this->getConfig(),
@@ -68,7 +73,23 @@ class DataExchangeBusinessFactory extends AbstractBusinessFactory
             $this->getRepository(),
             $this->getEntityManager(),
             $this->getConfig(),
+            $this->createImportJobRunClaimSettingsResolver(),
         );
+    }
+
+    public function createExhaustedImportJobRunWriter(): ExhaustedImportJobRunWriterInterface
+    {
+        return new ExhaustedImportJobRunWriter(
+            $this->getRepository(),
+            $this->getEntityManager(),
+            $this->getConfig(),
+            $this->createImportJobRunClaimSettingsResolver(),
+        );
+    }
+
+    public function createImportJobRunClaimSettingsResolver(): ImportJobRunClaimSettingsResolverInterface
+    {
+        return new ImportJobRunClaimSettingsResolver($this->getConfig());
     }
 
     public function createImportJobRunImporter(): ImportJobRunImporterInterface
@@ -81,6 +102,7 @@ class DataExchangeBusinessFactory extends AbstractBusinessFactory
             $this->getConfig(),
             $this->createCsvHeaderMapper(),
             $this->createSchemaPluginResolver(),
+            $this->createImportJobRunClaimSettingsResolver(),
         );
     }
 
@@ -95,6 +117,7 @@ class DataExchangeBusinessFactory extends AbstractBusinessFactory
             $this->createImportFileWriter(),
             $this->getEntityManager(),
             $this->getRepository(),
+            $this->getConfig(),
         );
     }
 

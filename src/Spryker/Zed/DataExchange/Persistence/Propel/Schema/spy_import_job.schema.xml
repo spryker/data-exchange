@@ -30,7 +30,7 @@
     <table name="spy_import_job_run">
         <column name="id_import_job_run" type="INTEGER" required="true" primaryKey="true" autoIncrement="true"/>
         <column name="fk_import_job" type="INTEGER" required="true"/>
-        <column name="status" type="VARCHAR" size="50" required="true" defaultValue="pending" description="Current status: pending, processing, done, failed."/>
+        <column name="status" type="VARCHAR" size="50" required="true" defaultValue="pending" description="Current status: receiving, pending, processing, done, imported_with_errors, failed. A run only moves receiving to pending, pending to processing, and processing to done, imported_with_errors or failed."/>
         <column name="number_of_processed_lines" type="INTEGER" required="true" defaultValue="0" description="Total number of CSV rows attempted."/>
         <column name="number_of_successfully_processed_lines" type="INTEGER" required="true" defaultValue="0" description="Number of successfully processed CSV rows."/>
         <column name="number_of_failed_lines" type="INTEGER" required="true" defaultValue="0" description="Number of CSV rows that failed processing."/>

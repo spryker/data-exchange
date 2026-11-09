@@ -15,11 +15,11 @@
             <table class="table">
                 <tr>
                     <th>{{ 'Status' | trans }}</th>
-                    <td>
-                        <span class="label label-{% if jobRun.status == 'done' %}success{% elseif jobRun.status == 'failed' %}danger{% elseif jobRun.status == 'processing' %}warning{% else %}default{% endif %}">
-                            {{ ('data_exchange.import_job_run.status.' ~ jobRun.status) | trans }}
-                        </span>
-                    </td>
+                    <td>{% include '@DataExchange/_partials/run-status-label.twig' with { status: jobRun.status } only %}</td>
+                </tr>
+                <tr>
+                    <th>{{ 'Attempts' | trans }}</th>
+                    <td>{{ jobRun.attemptCount }}</td>
                 </tr>
                 <tr>
                     <th>{{ 'Total Processed Lines' | trans }}</th>

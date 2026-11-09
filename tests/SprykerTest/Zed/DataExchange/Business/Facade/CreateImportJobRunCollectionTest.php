@@ -15,6 +15,8 @@ use Generated\Shared\Transfer\ImportJobRunCollectionRequestTransfer;
 use Generated\Shared\Transfer\ImportJobRunFileInfoTransfer;
 use Generated\Shared\Transfer\ImportJobRunTransfer;
 use Generated\Shared\Transfer\ImportJobTransfer;
+use Orm\Zed\DataExchange\Persistence\SpyImportJobRunErrorQuery;
+use Orm\Zed\DataExchange\Persistence\SpyImportJobRunQuery;
 use Spryker\Service\FileSystem\FileSystemServiceInterface;
 use Spryker\Zed\DataExchange\DataExchangeDependencyProvider;
 use SprykerTest\Zed\DataExchange\DataExchangeBusinessTester;
@@ -32,6 +34,10 @@ use SprykerTest\Zed\DataExchange\DataExchangeBusinessTester;
  */
 class CreateImportJobRunCollectionTest extends Unit
 {
+    protected const string FILE_SYSTEM_NAME_UNKNOWN = 'unknown-file-system';
+
+    protected const string ERROR_MESSAGE_FILE_NOT_STORED = 'The uploaded file could not be stored.';
+
     protected DataExchangeBusinessTester $tester;
 
     public function testCreatesImportJobRunForExistingJob(): void
@@ -121,10 +127,7 @@ class CreateImportJobRunCollectionTest extends Unit
         // Assert
         $this->assertCount(0, $collectionResponse->getImportJobRuns(), 'No run is created without its file');
         $this->assertCount(1, $collectionResponse->getErrors());
-        $this->assertSame(
-            sprintf('Failed to store uploaded file: Uploaded import file "%s" could not be opened for reading.', $missingUploadPath),
-            $collectionResponse->getErrors()->getIterator()->current()->getMessage(),
-        );
+        $this->assertSame(static::ERROR_MESSAGE_FILE_NOT_STORED, $collectionResponse->getErrors()->getIterator()->current()->getMessage());
     }
 
     protected function buildCollectionRequestWithUpload(
@@ -166,5 +169,101 @@ class CreateImportJobRunCollectionTest extends Unit
             'Import job with reference "non-existent-ref" not found.',
             $collectionResponse->getErrors()->getIterator()->current()->getMessage(),
         );
+    }
+
+    public function testCreatesTheImportJobRunAsPendingWhateverStatusTheRequestCarries(): void
+    {
+        // Arrange
+        $this->tester->haveImportJob([
+            ImportJobTransfer::REFERENCE => 'test-run-job',
+        ]);
+
+        $collectionRequest = (new ImportJobRunCollectionRequestTransfer())
+            ->addImportJobRun(
+                (new ImportJobRunTransfer())
+                    ->setImportJobReference('test-run-job')
+                    ->setStatus(DataExchangeBusinessTester::STATUS_DONE)
+                    ->setFileInfo(
+                        (new ImportJobRunFileInfoTransfer())
+                            ->setOriginalFileName('test.csv')
+                            ->setContentType('text/csv')
+                            ->setSize(100),
+                    ),
+            );
+
+        // Act
+        $collectionResponse = $this->tester->getFacade()->createImportJobRunCollection($collectionRequest);
+
+        // Assert
+        $idImportJobRun = $collectionResponse->getImportJobRuns()->getIterator()->current()->getIdImportJobRunOrFail();
+        $this->assertSame(DataExchangeBusinessTester::STATUS_PENDING, SpyImportJobRunQuery::create()->findPk($idImportJobRun)->getStatus());
+    }
+
+    public function testStoresTheUploadedFileAndMarksTheRunPending(): void
+    {
+        // Arrange
+        $rootDirectory = $this->tester->configureLocalFileSystems();
+        $collectionRequest = $this->createCollectionRequestWithUploadedFile($rootDirectory, $this->haveImportJobWithType());
+
+        // Act
+        $collectionResponse = $this->tester->getFacade()->createImportJobRunCollection($collectionRequest);
+
+        // Assert
+        $importJobRunEntity = SpyImportJobRunQuery::create()->findPk($collectionResponse->getImportJobRuns()->getIterator()->current()->getIdImportJobRunOrFail());
+        $this->assertSame(DataExchangeBusinessTester::STATUS_PENDING, $importJobRunEntity->getStatus());
+        $storedPath = json_decode($importJobRunEntity->getFileInfo(), true)['stored_path'];
+        $this->assertStringEqualsFile($rootDirectory . '/' . $storedPath, "sku\nsku-1\n");
+    }
+
+    public function testMarksTheRunFailedWithTheErrorWhenTheUploadedFileCannotBeStored(): void
+    {
+        // Arrange
+        $rootDirectory = $this->tester->configureLocalFileSystems();
+        $this->tester->mockConfigMethod('getImportFileSystemName', static::FILE_SYSTEM_NAME_UNKNOWN);
+        $importJobTransfer = $this->haveImportJobWithType();
+        $collectionRequest = $this->createCollectionRequestWithUploadedFile($rootDirectory, $importJobTransfer);
+
+        // Act
+        $collectionResponse = $this->tester->getFacade()->createImportJobRunCollection($collectionRequest);
+
+        // Assert
+        $this->assertCount(1, $collectionResponse->getErrors());
+        $this->assertCount(0, $collectionResponse->getImportJobRuns());
+        $importJobRunEntity = SpyImportJobRunQuery::create()->filterByFkImportJob($importJobTransfer->getIdImportJobOrFail())->findOne();
+        $this->assertSame(DataExchangeBusinessTester::STATUS_FAILED, $importJobRunEntity->getStatus());
+        $this->assertNotNull($importJobRunEntity->getImportFinishedAt());
+        $importJobRunErrorEntities = SpyImportJobRunErrorQuery::create()->filterByFkImportJobRun($importJobRunEntity->getIdImportJobRun())->find();
+        $this->assertCount(1, $importJobRunErrorEntities);
+        $this->assertSame(static::ERROR_MESSAGE_FILE_NOT_STORED, $collectionResponse->getErrors()->getIterator()->current()->getMessage());
+        $this->assertSame(static::ERROR_MESSAGE_FILE_NOT_STORED, $importJobRunErrorEntities->getFirst()->getErrorMessage());
+    }
+
+    protected function haveImportJobWithType(): ImportJobTransfer
+    {
+        return $this->tester->haveImportJob([
+            ImportJobTransfer::REFERENCE => 'test-run-job',
+            ImportJobTransfer::TYPE => 'test-run-type',
+        ]);
+    }
+
+    protected function createCollectionRequestWithUploadedFile(
+        string $rootDirectory,
+        ImportJobTransfer $importJobTransfer
+    ): ImportJobRunCollectionRequestTransfer {
+        $uploadedFilePath = $rootDirectory . '/upload.csv';
+        file_put_contents($uploadedFilePath, "sku\nsku-1\n");
+
+        return (new ImportJobRunCollectionRequestTransfer())
+            ->addImportJobRun(
+                (new ImportJobRunTransfer())
+                    ->setImportJobReference($importJobTransfer->getReferenceOrFail())
+                    ->setFileInfo(
+                        (new ImportJobRunFileInfoTransfer())
+                            ->setOriginalFileName('upload.csv')
+                            ->setContentType('text/csv')
+                            ->setSize(12)
+                            ->setUploadedFilePath($uploadedFilePath),
+                    ),
+            );
     }
 }

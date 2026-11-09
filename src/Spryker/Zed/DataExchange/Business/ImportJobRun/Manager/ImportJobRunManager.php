@@ -15,6 +15,7 @@ use Generated\Shared\Transfer\ImportJobRunTransfer;
 use Spryker\Shared\Log\LoggerTrait;
 use Spryker\Zed\DataExchange\Business\ImportJobRun\Claimer\ImportJobRunClaimerInterface;
 use Spryker\Zed\DataExchange\Business\ImportJobRun\Importer\ImportJobRunImporterInterface;
+use Spryker\Zed\DataExchange\Business\ImportJobRun\Writer\ExhaustedImportJobRunWriterInterface;
 use Spryker\Zed\DataExchange\DataExchangeConfig;
 use Spryker\Zed\DataExchange\Persistence\DataExchangeEntityManagerInterface;
 use Spryker\Zed\EventBehavior\EventBehaviorConfig;
@@ -32,6 +33,7 @@ class ImportJobRunManager implements ImportJobRunManagerInterface
      */
     public function __construct(
         protected ImportJobRunClaimerInterface $importJobRunClaimer,
+        protected ExhaustedImportJobRunWriterInterface $exhaustedImportJobRunWriter,
         protected DataExchangeEntityManagerInterface $entityManager,
         protected ImportJobRunImporterInterface $importer,
         protected DataExchangeConfig $config,
@@ -42,6 +44,8 @@ class ImportJobRunManager implements ImportJobRunManagerInterface
 
     public function processNextPendingRun(): bool
     {
+        $this->exhaustedImportJobRunWriter->failExhaustedImportJobRuns();
+
         $importJobRun = $this->importJobRunClaimer->claimNextImportJobRun();
 
         if ($importJobRun === null) {
@@ -79,7 +83,7 @@ class ImportJobRunManager implements ImportJobRunManagerInterface
             ->setImportFinishedAt($finishedAt)
             ->setUpdatedAt($finishedAt);
 
-        if (!$this->entityManager->updateClaimedImportJobRunResult($importJobRun)) {
+        if (!$this->entityManager->updateClaimedImportJobRun($importJobRun)) {
             return;
         }
 

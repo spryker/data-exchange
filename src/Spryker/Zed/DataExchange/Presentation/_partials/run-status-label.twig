@@ -1,0 +1,10 @@
+{% set labelClassByStatus = {
+    done: 'label-success',
+    imported_with_errors: 'label-warning',
+    processing: 'label-info',
+    failed: 'label-danger',
+} %}
+
+<span class="label {{ labelClassByStatus[status] ?? 'label-default' }}">
+    {{ ('data_exchange.import_job_run.status.' ~ status) | trans }}
+</span>

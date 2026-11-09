@@ -10,8 +10,8 @@ declare(strict_types=1);
 namespace Spryker\Zed\DataExchange\Business\ImportJobRun\Claimer;
 
 use DateTime;
-use DateTimeZone;
 use Generated\Shared\Transfer\ImportJobRunTransfer;
+use Spryker\Zed\DataExchange\Business\ImportJobRun\Resolver\ImportJobRunClaimSettingsResolverInterface;
 use Spryker\Zed\DataExchange\DataExchangeConfig;
 use Spryker\Zed\DataExchange\Persistence\DataExchangeEntityManagerInterface;
 use Spryker\Zed\DataExchange\Persistence\DataExchangeRepositoryInterface;
@@ -33,35 +33,34 @@ class ImportJobRunClaimer implements ImportJobRunClaimerInterface
         protected DataExchangeRepositoryInterface $repository,
         protected DataExchangeEntityManagerInterface $entityManager,
         protected DataExchangeConfig $config,
+        protected ImportJobRunClaimSettingsResolverInterface $importJobRunClaimSettingsResolver,
     ) {
     }
 
     public function claimNextImportJobRun(): ?ImportJobRunTransfer
     {
         $claimedAt = new DateTime();
-        $leaseCheckedAt = new DateTime('now', new DateTimeZone($this->config->getImportJobRunLeaseTimeZone()));
-        $maxAttempts = max(1, $this->config->getImportJobRunMaxAttempts());
-        $importJobRunTransfer = $this->repository->findOldestClaimableImportJobRun($leaseCheckedAt->format(static::DATETIME_FORMAT), $maxAttempts);
+        $leaseCheckedAt = $this->importJobRunClaimSettingsResolver->getLeaseCheckedAt();
+        $maxAttempts = $this->importJobRunClaimSettingsResolver->getMaxAttempts();
+        $importJobRunTransfer = $this->repository->findOldestClaimableImportJobRun($leaseCheckedAt, $maxAttempts);
 
         if ($importJobRunTransfer === null) {
             return null;
         }
-
-        $leaseExpiresAt = (clone $leaseCheckedAt)->modify(sprintf('+%d minutes', max(1, $this->config->getImportJobRunLeaseDurationInMinutes())));
 
         $importJobRunTransfer
             ->setStatus($this->config->getImportStatusProcessing())
             ->setClaimedBy($this->generateClaimedBy())
             ->setAttemptCount($importJobRunTransfer->getAttemptCountOrFail() + 1)
             ->setImportStartedAt($claimedAt->format(static::DATETIME_FORMAT))
-            ->setLeaseExpiresAt($leaseExpiresAt->format(static::DATETIME_FORMAT))
+            ->setLeaseExpiresAt($this->importJobRunClaimSettingsResolver->getLeaseExpiresAt())
             ->setNumberOfProcessedLines(0)
             ->setNumberOfSuccessfullyProcessedLines(0)
             ->setNumberOfFailedLines(0)
             ->setNumberOfProcessedBytes(null)
             ->setUpdatedAt($claimedAt->format(static::DATETIME_FORMAT));
 
-        if (!$this->entityManager->updateClaimableImportJobRun($importJobRunTransfer, $leaseCheckedAt->format(static::DATETIME_FORMAT), $maxAttempts)) {
+        if (!$this->entityManager->updateClaimableImportJobRun($importJobRunTransfer, $leaseCheckedAt, $maxAttempts)) {
             return null;
         }
 

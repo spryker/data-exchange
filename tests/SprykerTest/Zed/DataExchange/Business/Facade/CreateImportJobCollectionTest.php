@@ -44,10 +44,11 @@ class CreateImportJobCollectionTest extends Unit
     public function testCreatesImportJobWithGeneratedReference(): void
     {
         // Arrange
+        $uniqueSuffix = uniqid();
         $collectionRequest = (new ImportJobCollectionRequestTransfer())
             ->addImportJob(
                 (new ImportJobTransfer())
-                    ->setName('My Test Job')
+                    ->setName('My Test Job ' . $uniqueSuffix)
                     ->setType(DemoCsvImportSchemaPlugin::TYPE),
             );
 
@@ -60,9 +61,9 @@ class CreateImportJobCollectionTest extends Unit
 
         $createdJob = $collectionResponse->getImportJobs()->getIterator()->current();
         $this->assertNotNull($createdJob->getIdImportJob());
-        $this->assertSame('My Test Job', $createdJob->getName());
+        $this->assertSame('My Test Job ' . $uniqueSuffix, $createdJob->getName());
         $this->assertSame(DemoCsvImportSchemaPlugin::TYPE, $createdJob->getType());
-        $this->assertSame('my-test-job', $createdJob->getReference());
+        $this->assertSame('my-test-job-' . $uniqueSuffix, $createdJob->getReference());
     }
 
     public function testCreatesImportJobWithExplicitReference(): void

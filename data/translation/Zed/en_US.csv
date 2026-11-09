@@ -19,6 +19,7 @@ Save,Save
 "Upload & Queue Import","Upload & Queue Import"
 "Run Summary","Run Summary"
 Status,Status
+Attempts,Attempts
 "Total Processed Lines","Total Processed Lines"
 "Successfully Processed Lines","Successfully Processed Lines"
 "Failed Lines","Failed Lines"
@@ -39,6 +40,7 @@ Reference,Reference
 Type,Type
 Description,Description
 "Success Runs","Success Runs"
+"Runs With Errors","Runs With Errors"
 "Processing Runs","Processing Runs"
 "Pending Runs","Pending Runs"
 "Failed Runs","Failed Runs"
@@ -56,7 +58,9 @@ Failed,Failed
 "Row #","Row #"
 "Error Message","Error Message"
 "No errors found for this run.","No errors found for this run."
+data_exchange.import_job_run.status.receiving,Receiving
 data_exchange.import_job_run.status.pending,Pending
 data_exchange.import_job_run.status.processing,Processing
 data_exchange.import_job_run.status.done,Done
 data_exchange.import_job_run.status.failed,Failed
+data_exchange.import_job_run.status.imported_with_errors,"Imported with errors"

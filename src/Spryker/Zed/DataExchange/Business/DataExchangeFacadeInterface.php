@@ -48,9 +48,11 @@ interface DataExchangeFacadeInterface
     /**
      * Specification:
      * - Creates import job run records from the provided collection request.
-     * - Stores the uploaded file on the import file system under `{jobType}/{fileName}` when `ImportJobRunFileInfo.uploadedFilePath` is set.
-     * - Sets pending status and initializes counters for each run.
-     * - Persists each import job run to the database.
+     * - Persists each import job run with receiving status, whatever status the request carries, and initializes its counters.
+     * - Then stores the uploaded file on the import file system under `{jobType}/{fileName}` when `ImportJobRunFileInfo.uploadedFilePath` is set.
+     * - Then sets pending status and stores the file info, only while the run is still receiving.
+     * - Marks the run failed with one error saying that the file could not be stored, and reports the same error; the cause is logged, not stored; a failed run is never claimed.
+     * - Logs an error and still reports the error when the run cannot be marked failed; the run then stays receiving.
      * - Returns `ImportJobRunCollectionResponseTransfer` with created runs or errors.
      *
      * @api
@@ -94,20 +96,25 @@ interface DataExchangeFacadeInterface
 
     /**
      * Specification:
+     * - Marks up to `DataExchangeConfig::getImportJobRunExhaustedBatchSize()` processing runs that were abandoned by their worker after `DataExchangeConfig::getImportJobRunMaxAttempts()` attempts as failed, oldest first, with one error explaining that the attempts were exhausted; such a run is never claimed again and executes no post-processors.
+     * - Logs an error and continues with the next run when one of these runs cannot be marked failed; the remaining runs are marked failed by the next calls.
+     * - Marking these runs failed does not count towards the return value.
      * - Finds the oldest claimable import job run: a pending run, or a processing run whose lease is not set or has expired (abandoned by its worker).
      * - Skips runs that were already claimed `DataExchangeConfig::getImportJobRunMaxAttempts()` times.
      * - Does nothing if no claimable run exists, or if another worker claims the same run first.
      * - Claims the run with a conditional update: marks it as processing, sets a unique `claimedBy` token, a lease of `DataExchangeConfig::getImportJobRunLeaseDurationInMinutes()`, increments the attempt count, records the start timestamp and resets the progress counters of a previous attempt.
      * - Executes pre-processor plugins `\Spryker\Zed\DataExchangeExtension\Dependency\Plugin\ImportPreProcessorPluginInterface` before processing.
      * - Reads the file in batches and runs each batch through the import steps of the schema plugin registered for the job type.
+     * - Skips blank lines; they count neither as processed nor as failed lines.
      * - Records per-row errors for failed rows.
-     * - After every batch, writes the progress counters and renews the lease, only while `claimedBy` still matches the token of this worker.
-     * - Stops before the next batch, without an error, when that write affects no row because another worker took over the claim; the run is then left to that worker and post-processors are not executed.
+     * - After every batch, writes the progress counters and renews the lease, only while the run is still processing and `claimedBy` still matches the token of this worker.
+     * - Stops before the next batch, without an error, when that write affects no row because another worker took over the claim or the run was marked failed; the run is then left as it is and post-processors are not executed.
      * - Triggers the publish events collected from the processed batches once after reading stops.
-     * - Marks the run as done or failed with final counters and finish timestamp; an unhandled exception marks the run as failed and records the message as an error.
-     * - Writes the final status only while `claimedBy` still matches the token of this worker; otherwise leaves the run to the other worker, records no error and does not execute post-processors.
+     * - Marks the run with final counters and finish timestamp as failed when no row was processed, with one error explaining that the file has no rows to import, or when every row failed, as imported with errors when some rows failed, and as done otherwise; an unhandled exception marks the run as failed and records the message as an error.
+     * - Writes the final status only while the run is still processing and `claimedBy` still matches the token of this worker; otherwise leaves the run as it is, records no error and does not execute post-processors.
      * - Executes post-processor plugins `\Spryker\Zed\DataExchangeExtension\Dependency\Plugin\ImportPostProcessorPluginInterface` after a completed import; a post-processor exception is recorded as an error and keeps the run status.
      * - Returns `true` when a run was claimed, `false` when no claimable run was left.
+     * - Never claims a receiving run.
      *
      * @api
      */

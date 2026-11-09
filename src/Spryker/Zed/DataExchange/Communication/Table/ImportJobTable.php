@@ -31,6 +31,8 @@ class ImportJobTable extends AbstractTable
 
     protected const string COL_SUCCESS_RUNS = 'success_runs';
 
+    protected const string COL_IMPORTED_WITH_ERRORS_RUNS = 'imported_with_errors_runs';
+
     protected const string COL_PROCESSING_RUNS = 'processing_runs';
 
     protected const string COL_PENDING_RUNS = 'pending_runs';
@@ -60,6 +62,7 @@ class ImportJobTable extends AbstractTable
             static::COL_TYPE => 'Type',
             static::COL_DESCRIPTION => 'Description',
             static::COL_SUCCESS_RUNS => 'Success Runs',
+            static::COL_IMPORTED_WITH_ERRORS_RUNS => 'Runs With Errors',
             static::COL_PROCESSING_RUNS => 'Processing Runs',
             static::COL_PENDING_RUNS => 'Pending Runs',
             static::COL_FAILED_RUNS => 'Failed Runs',
@@ -103,6 +106,7 @@ class ImportJobTable extends AbstractTable
                 static::COL_TYPE => $item[static::COL_TYPE],
                 static::COL_DESCRIPTION => $item[static::COL_DESCRIPTION],
                 static::COL_SUCCESS_RUNS => (int)$item[static::COL_SUCCESS_RUNS],
+                static::COL_IMPORTED_WITH_ERRORS_RUNS => (int)$item[static::COL_IMPORTED_WITH_ERRORS_RUNS],
                 static::COL_PROCESSING_RUNS => (int)$item[static::COL_PROCESSING_RUNS],
                 static::COL_PENDING_RUNS => (int)$item[static::COL_PENDING_RUNS],
                 static::COL_FAILED_RUNS => (int)$item[static::COL_FAILED_RUNS],
@@ -126,6 +130,17 @@ class ImportJobTable extends AbstractTable
                     $this->dataExchangeConfig->getImportStatusDone(),
                 ),
                 static::COL_SUCCESS_RUNS,
+            )
+            ->withColumn(
+                sprintf(
+                    '(SELECT COUNT(*) FROM %s WHERE %s = %s AND %s = \'%s\')',
+                    SpyImportJobRunTableMap::TABLE_NAME,
+                    SpyImportJobRunTableMap::COL_FK_IMPORT_JOB,
+                    SpyImportJobTableMap::COL_ID_IMPORT_JOB,
+                    SpyImportJobRunTableMap::COL_STATUS,
+                    $this->dataExchangeConfig->getImportStatusImportedWithErrors(),
+                ),
+                static::COL_IMPORTED_WITH_ERRORS_RUNS,
             )
             ->withColumn(
                 sprintf(

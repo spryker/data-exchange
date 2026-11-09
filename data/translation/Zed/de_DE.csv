@@ -19,6 +19,7 @@ Save,Speichern
 "Upload & Queue Import","Hochladen und Import einreihen"
 "Run Summary",Durchlauf-Zusammenfassung
 Status,Status
+Attempts,Versuche
 "Total Processed Lines","Insgesamt verarbeitete Zeilen"
 "Successfully Processed Lines","Erfolgreich verarbeitete Zeilen"
 "Failed Lines","Fehlgeschlagene Zeilen"
@@ -39,6 +40,7 @@ Reference,Referenz
 Type,Typ
 Description,Beschreibung
 "Success Runs","Erfolgreiche Läufe"
+"Runs With Errors","Läufe mit Fehlern"
 "Processing Runs","Laufende Läufe"
 "Pending Runs","Ausstehende Läufe"
 "Failed Runs","Fehlgeschlagene Läufe"
@@ -56,7 +58,9 @@ Failed,Fehlgeschlagen
 "Row #","Zeile Nr."
 "Error Message",Fehlermeldung
 "No errors found for this run.","Für diesen Lauf wurden keine Fehler gefunden."
+data_exchange.import_job_run.status.receiving,"Wird empfangen"
 data_exchange.import_job_run.status.pending,Ausstehend
 data_exchange.import_job_run.status.processing,"In Bearbeitung"
 data_exchange.import_job_run.status.done,Abgeschlossen
 data_exchange.import_job_run.status.failed,Fehlgeschlagen
+data_exchange.import_job_run.status.imported_with_errors,"Mit Fehlern importiert"

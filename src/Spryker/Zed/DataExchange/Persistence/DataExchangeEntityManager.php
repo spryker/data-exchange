@@ -50,6 +50,22 @@ class DataExchangeEntityManager extends AbstractEntityManager implements DataExc
         return $importJobRunTransfer->setIdImportJobRun($importJobRunEntity->getIdImportJobRun());
     }
 
+    public function updateReceivingImportJobRun(ImportJobRunTransfer $importJobRunTransfer): bool
+    {
+        $affectedRowCount = $this->getFactory()
+            ->createImportJobRunQuery()
+            ->filterByIdImportJobRun($importJobRunTransfer->getIdImportJobRunOrFail())
+            ->filterByStatus($this->getFactory()->getConfig()->getImportStatusReceiving())
+            ->update([
+                'Status' => $importJobRunTransfer->getStatusOrFail(),
+                'FileInfo' => $this->getFactory()->createMapper()->mapImportJobRunFileInfoTransferToJson($importJobRunTransfer->getFileInfoOrFail()),
+                'ImportFinishedAt' => $importJobRunTransfer->getImportFinishedAt(),
+                'UpdatedAt' => $importJobRunTransfer->getUpdatedAtOrFail(),
+            ]);
+
+        return $affectedRowCount === 1;
+    }
+
     public function updateClaimableImportJobRun(ImportJobRunTransfer $importJobRunTransfer, string $leaseCheckedAt, int $maxAttempts): bool
     {
         $importJobRunQuery = $this->getFactory()
@@ -75,14 +91,17 @@ class DataExchangeEntityManager extends AbstractEntityManager implements DataExc
         return $affectedRowCount === 1;
     }
 
-    public function updateClaimedImportJobRunProgress(ImportJobRunTransfer $importJobRunTransfer): bool
+    public function updateClaimedImportJobRun(ImportJobRunTransfer $importJobRunTransfer): bool
     {
         $affectedRowCount = $this->getFactory()
             ->createImportJobRunQuery()
             ->filterByIdImportJobRun($importJobRunTransfer->getIdImportJobRunOrFail())
             ->filterByClaimedBy($importJobRunTransfer->getClaimedByOrFail())
+            ->filterByStatus($this->getFactory()->getConfig()->getImportStatusProcessing())
             ->update([
+                'Status' => $importJobRunTransfer->getStatusOrFail(),
                 'LeaseExpiresAt' => $importJobRunTransfer->getLeaseExpiresAtOrFail(),
+                'ImportFinishedAt' => $importJobRunTransfer->getImportFinishedAt(),
                 'NumberOfProcessedLines' => $importJobRunTransfer->getNumberOfProcessedLinesOrFail(),
                 'NumberOfSuccessfullyProcessedLines' => $importJobRunTransfer->getNumberOfSuccessfullyProcessedLinesOrFail(),
                 'NumberOfFailedLines' => $importJobRunTransfer->getNumberOfFailedLinesOrFail(),
@@ -93,19 +112,18 @@ class DataExchangeEntityManager extends AbstractEntityManager implements DataExc
         return $affectedRowCount === 1;
     }
 
-    public function updateClaimedImportJobRunResult(ImportJobRunTransfer $importJobRunTransfer): bool
+    public function updateExhaustedImportJobRun(ImportJobRunTransfer $importJobRunTransfer, string $leaseCheckedAt, int $maxAttempts): bool
     {
-        $affectedRowCount = $this->getFactory()
+        $importJobRunQuery = $this->getFactory()
             ->createImportJobRunQuery()
-            ->filterByIdImportJobRun($importJobRunTransfer->getIdImportJobRunOrFail())
-            ->filterByClaimedBy($importJobRunTransfer->getClaimedByOrFail())
+            ->filterByIdImportJobRun($importJobRunTransfer->getIdImportJobRunOrFail());
+
+        $affectedRowCount = $this->getFactory()
+            ->createImportJobRunQueryExpander()
+            ->expandWithExhaustedCondition($importJobRunQuery, $leaseCheckedAt, $maxAttempts)
             ->update([
                 'Status' => $importJobRunTransfer->getStatusOrFail(),
                 'ImportFinishedAt' => $importJobRunTransfer->getImportFinishedAtOrFail(),
-                'NumberOfProcessedLines' => $importJobRunTransfer->getNumberOfProcessedLinesOrFail(),
-                'NumberOfSuccessfullyProcessedLines' => $importJobRunTransfer->getNumberOfSuccessfullyProcessedLinesOrFail(),
-                'NumberOfFailedLines' => $importJobRunTransfer->getNumberOfFailedLinesOrFail(),
-                'NumberOfProcessedBytes' => $importJobRunTransfer->getNumberOfProcessedBytes(),
                 'UpdatedAt' => $importJobRunTransfer->getUpdatedAtOrFail(),
             ]);
 

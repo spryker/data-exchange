@@ -83,6 +83,27 @@ class DataExchangeRepository extends AbstractRepository implements DataExchangeR
         return $this->getFactory()->createMapper()->mapImportJobRunEntityToTransfer($importJobRunEntity, new ImportJobRunTransfer());
     }
 
+    public function getExhaustedImportJobRunCollection(string $leaseCheckedAt, int $maxAttempts, int $limit): ImportJobRunCollectionTransfer
+    {
+        $importJobRunQuery = $this->getFactory()->createImportJobRunQuery();
+
+        $importJobRunEntities = $this->getFactory()
+            ->createImportJobRunQueryExpander()
+            ->expandWithExhaustedCondition($importJobRunQuery, $leaseCheckedAt, $maxAttempts)
+            ->orderByIdImportJobRun(Criteria::ASC)
+            ->setLimit($limit)
+            ->find();
+
+        $importJobRunCollectionTransfer = new ImportJobRunCollectionTransfer();
+        $mapper = $this->getFactory()->createMapper();
+
+        foreach ($importJobRunEntities as $importJobRunEntity) {
+            $importJobRunCollectionTransfer->addImportJobRun($mapper->mapImportJobRunEntityToTransfer($importJobRunEntity, new ImportJobRunTransfer()));
+        }
+
+        return $importJobRunCollectionTransfer;
+    }
+
     public function getImportJobRunErrorCollection(ImportJobRunErrorCriteriaTransfer $criteriaTransfer): ImportJobRunErrorCollectionTransfer
     {
         $query = $this->getFactory()->createImportJobRunErrorQuery();
