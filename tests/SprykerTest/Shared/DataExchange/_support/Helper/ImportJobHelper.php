@@ -76,6 +76,7 @@ class ImportJobHelper extends Module
         $importJobRunEntity->setNumberOfProcessedLines($seedData[ImportJobRunTransfer::NUMBER_OF_PROCESSED_LINES] ?? 0);
         $importJobRunEntity->setNumberOfSuccessfullyProcessedLines($seedData[ImportJobRunTransfer::NUMBER_OF_SUCCESSFULLY_PROCESSED_LINES] ?? 0);
         $importJobRunEntity->setNumberOfFailedLines($seedData[ImportJobRunTransfer::NUMBER_OF_FAILED_LINES] ?? 0);
+        $importJobRunEntity->setNumberOfOmittedErrorRows($seedData[ImportJobRunTransfer::NUMBER_OF_OMITTED_ERROR_ROWS] ?? 0);
         $importJobRunEntity->setNumberOfProcessedBytes($seedData[ImportJobRunTransfer::NUMBER_OF_PROCESSED_BYTES] ?? null);
         $importJobRunEntity->setClaimedBy($seedData[ImportJobRunTransfer::CLAIMED_BY] ?? null);
         $importJobRunEntity->setLeaseExpiresAt($seedData[ImportJobRunTransfer::LEASE_EXPIRES_AT] ?? null);
@@ -96,6 +97,7 @@ class ImportJobHelper extends Module
             ->setNumberOfProcessedLines($importJobRunEntity->getNumberOfProcessedLines())
             ->setNumberOfSuccessfullyProcessedLines($importJobRunEntity->getNumberOfSuccessfullyProcessedLines())
             ->setNumberOfFailedLines($importJobRunEntity->getNumberOfFailedLines())
+            ->setNumberOfOmittedErrorRows($importJobRunEntity->getNumberOfOmittedErrorRows())
             ->setNumberOfProcessedBytes($importJobRunEntity->getNumberOfProcessedBytes() !== null ? (int)$importJobRunEntity->getNumberOfProcessedBytes() : null)
             ->setFileInfo((new ImportJobRunFileInfoTransfer())->fromArray($fileInfo, true))
             ->setClaimedBy($importJobRunEntity->getClaimedBy())

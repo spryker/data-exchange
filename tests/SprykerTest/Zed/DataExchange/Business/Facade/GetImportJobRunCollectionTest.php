@@ -88,6 +88,7 @@ class GetImportJobRunCollectionTest extends Unit
             ImportJobRunTransfer::NUMBER_OF_PROCESSED_LINES => 100,
             ImportJobRunTransfer::NUMBER_OF_SUCCESSFULLY_PROCESSED_LINES => 95,
             ImportJobRunTransfer::NUMBER_OF_FAILED_LINES => 5,
+            ImportJobRunTransfer::NUMBER_OF_OMITTED_ERROR_ROWS => 3,
         ]);
 
         $criteriaTransfer = (new ImportJobRunCriteriaTransfer())
@@ -104,6 +105,7 @@ class GetImportJobRunCollectionTest extends Unit
         $this->assertSame(100, $run->getNumberOfProcessedLines());
         $this->assertSame(95, $run->getNumberOfSuccessfullyProcessedLines());
         $this->assertSame(5, $run->getNumberOfFailedLines());
+        $this->assertSame(3, $run->getNumberOfOmittedErrorRows());
     }
 
     /**

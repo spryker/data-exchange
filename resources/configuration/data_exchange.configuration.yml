@@ -1,0 +1,39 @@
+# yaml-language-server: $schema=../../../../Spryker/Configuration/resources/configuration/configuration-schema-v1.json
+features:
+    - key: data_exchange
+      name: Data Exchange
+      description: Data import and export configuration.
+      enabled: true
+      order: 0
+      tabs:
+          - key: import
+            name: Import
+            description: Data import settings.
+            enabled: true
+            order: 0
+            groups:
+                - key: job_runs
+                  name: Import Job Runs
+                  description: Controls what an import job run stores.
+                  enabled: true
+                  order: 0
+                  scopes:
+                      - global
+                  settings:
+                      - key: error_row_limit
+                        name: Import Job Run Error Row Limit
+                        description: Maximum number of row errors one import job run stores, whatever the size of its file. Row errors past this limit are counted on the run but not stored, so one bad file cannot fill the error table. Errors without a row number are always stored.
+                        placeholder: Enter the number of error rows
+                        type: integer
+                        default_value: 1000
+                        enabled: true
+                        secret: false
+                        storefront: false
+                        scopes:
+                            - global
+                        constraints:
+                            - type: required
+                              message: Import job run error row limit is required
+                            - type: min
+                              message: Must be at least 1
+                              options: { min: 1 }

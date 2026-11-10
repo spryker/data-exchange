@@ -58,6 +58,12 @@
     {% if errorCount > 0 %}
         {% embed '@Gui/Partials/widget.twig' with { widget_title: 'Import Errors' | trans ~ ' (' ~ errorCount ~ ')' } %}
             {% block widget_content %}
+                {% if omittedErrorCount > 0 %}
+                    <div class="alert alert-warning">
+                        <i class="fa fa-exclamation-triangle"></i>
+                        {{ 'The error row limit was reached: only the first %stored% of %total% errors are stored. %omitted% further errors were counted but not stored.' | trans({'%stored%': errorCount, '%total%': errorCount + omittedErrorCount, '%omitted%': omittedErrorCount}) }}
+                    </div>
+                {% endif %}
                 {% if showErrorsInline and inlineErrors is not null %}
                     <table class="table table-striped table-bordered">
                         <thead>

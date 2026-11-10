@@ -10,14 +10,19 @@ declare(strict_types=1);
 namespace Spryker\Zed\DataExchange\Business\ImportJobRun\Claimer;
 
 use DateTime;
+use Generated\Shared\Transfer\ImportJobRunErrorCollectionDeleteCriteriaTransfer;
+use Generated\Shared\Transfer\ImportJobRunErrorConditionsTransfer;
 use Generated\Shared\Transfer\ImportJobRunTransfer;
 use Spryker\Zed\DataExchange\Business\ImportJobRun\Resolver\ImportJobRunClaimSettingsResolverInterface;
 use Spryker\Zed\DataExchange\DataExchangeConfig;
 use Spryker\Zed\DataExchange\Persistence\DataExchangeEntityManagerInterface;
 use Spryker\Zed\DataExchange\Persistence\DataExchangeRepositoryInterface;
+use Spryker\Zed\Kernel\Persistence\EntityManager\TransactionTrait;
 
 class ImportJobRunClaimer implements ImportJobRunClaimerInterface
 {
+    use TransactionTrait;
+
     protected const string DATETIME_FORMAT = 'Y-m-d H:i:s';
 
     protected const string CLAIMED_BY_SEPARATOR = ':';
@@ -57,14 +62,36 @@ class ImportJobRunClaimer implements ImportJobRunClaimerInterface
             ->setNumberOfProcessedLines(0)
             ->setNumberOfSuccessfullyProcessedLines(0)
             ->setNumberOfFailedLines(0)
+            ->setNumberOfOmittedErrorRows(0)
             ->setNumberOfProcessedBytes(null)
             ->setUpdatedAt($claimedAt->format(static::DATETIME_FORMAT));
 
+        $isClaimed = $this->getTransactionHandler()->handleTransaction(function () use ($importJobRunTransfer, $leaseCheckedAt, $maxAttempts): bool {
+            return $this->claimImportJobRun($importJobRunTransfer, $leaseCheckedAt, $maxAttempts);
+        });
+
+        return $isClaimed ? $importJobRunTransfer : null;
+    }
+
+    /**
+     * Claims the run with the conditional UPDATE. A reclaimed run (attempt 2 or later) reads the file from the first row
+     * again, so the error rows of the abandoned attempt are deleted with the claim; the counters were reset by the caller.
+     */
+    protected function claimImportJobRun(ImportJobRunTransfer $importJobRunTransfer, string $leaseCheckedAt, int $maxAttempts): bool
+    {
         if (!$this->entityManager->updateClaimableImportJobRun($importJobRunTransfer, $leaseCheckedAt, $maxAttempts)) {
-            return null;
+            return false;
         }
 
-        return $importJobRunTransfer;
+        if ($importJobRunTransfer->getAttemptCountOrFail() > 1) {
+            $this->entityManager->deleteImportJobRunErrorCollection(
+                (new ImportJobRunErrorCollectionDeleteCriteriaTransfer())->setImportJobRunErrorConditions(
+                    (new ImportJobRunErrorConditionsTransfer())->addIdImportJobRun($importJobRunTransfer->getIdImportJobRunOrFail()),
+                ),
+            );
+        }
+
+        return true;
     }
 
     protected function generateClaimedBy(): string

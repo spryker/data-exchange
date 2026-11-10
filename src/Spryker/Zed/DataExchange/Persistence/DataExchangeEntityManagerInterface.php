@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace Spryker\Zed\DataExchange\Persistence;
 
+use Generated\Shared\Transfer\ImportJobRunErrorCollectionDeleteCriteriaTransfer;
 use Generated\Shared\Transfer\ImportJobRunErrorTransfer;
 use Generated\Shared\Transfer\ImportJobRunTransfer;
 use Generated\Shared\Transfer\ImportJobTransfer;
@@ -28,6 +29,10 @@ interface DataExchangeEntityManagerInterface
     public function updateClaimedImportJobRun(ImportJobRunTransfer $importJobRunTransfer): bool;
 
     public function createImportJobRunError(ImportJobRunErrorTransfer $importJobRunErrorTransfer): ImportJobRunErrorTransfer;
+
+    public function deleteImportJobRunErrorCollection(
+        ImportJobRunErrorCollectionDeleteCriteriaTransfer $importJobRunErrorCollectionDeleteCriteriaTransfer
+    ): void;
 
     public function updateExhaustedImportJobRun(ImportJobRunTransfer $importJobRunTransfer, string $leaseCheckedAt, int $maxAttempts): bool;
 }

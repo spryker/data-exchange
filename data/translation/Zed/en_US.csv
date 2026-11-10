@@ -58,6 +58,7 @@ Failed,Failed
 "Row #","Row #"
 "Error Message","Error Message"
 "No errors found for this run.","No errors found for this run."
+"The error row limit was reached: only the first %stored% of %total% errors are stored. %omitted% further errors were counted but not stored.","The error row limit was reached: only the first %stored% of %total% errors are stored. %omitted% further errors were counted but not stored."
 data_exchange.import_job_run.status.receiving,Receiving
 data_exchange.import_job_run.status.pending,Pending
 data_exchange.import_job_run.status.processing,Processing

@@ -69,6 +69,7 @@ class DataExchangeMapper
             ->setNumberOfProcessedLines($entity->getNumberOfProcessedLines())
             ->setNumberOfSuccessfullyProcessedLines($entity->getNumberOfSuccessfullyProcessedLines())
             ->setNumberOfFailedLines($entity->getNumberOfFailedLines())
+            ->setNumberOfOmittedErrorRows($entity->getNumberOfOmittedErrorRows())
             ->setNumberOfProcessedBytes($entity->getNumberOfProcessedBytes() !== null ? (int)$entity->getNumberOfProcessedBytes() : null)
             ->setImportStartedAt($entity->getImportStartedAt() ? $entity->getImportStartedAt()->format(static::DATETIME_FORMAT) : null)
             ->setImportFinishedAt($entity->getImportFinishedAt() ? $entity->getImportFinishedAt()->format(static::DATETIME_FORMAT) : null)

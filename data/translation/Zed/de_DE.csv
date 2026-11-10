@@ -58,6 +58,7 @@ Failed,Fehlgeschlagen
 "Row #","Zeile Nr."
 "Error Message",Fehlermeldung
 "No errors found for this run.","Für diesen Lauf wurden keine Fehler gefunden."
+"The error row limit was reached: only the first %stored% of %total% errors are stored. %omitted% further errors were counted but not stored.","Das Limit für Fehlerzeilen wurde erreicht: Nur die ersten %stored% von %total% Fehlern sind gespeichert. %omitted% weitere Fehler wurden gezählt, aber nicht gespeichert."
 data_exchange.import_job_run.status.receiving,"Wird empfangen"
 data_exchange.import_job_run.status.pending,Ausstehend
 data_exchange.import_job_run.status.processing,"In Bearbeitung"

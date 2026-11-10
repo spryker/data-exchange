@@ -13,10 +13,11 @@ use Generated\Shared\Transfer\ImportJobCollectionTransfer;
 use Generated\Shared\Transfer\ImportJobCriteriaTransfer;
 use Generated\Shared\Transfer\ImportJobRunCollectionTransfer;
 use Generated\Shared\Transfer\ImportJobRunCriteriaTransfer;
-use Generated\Shared\Transfer\ImportJobRunErrorCollectionTransfer;
+use Generated\Shared\Transfer\ImportJobRunErrorCollectionResponseTransfer;
 use Generated\Shared\Transfer\ImportJobRunErrorCriteriaTransfer;
 use Generated\Shared\Transfer\ImportJobRunErrorTransfer;
 use Generated\Shared\Transfer\ImportJobRunTransfer;
+use Orm\Zed\DataExchange\Persistence\Map\SpyImportJobRunTableMap;
 use Orm\Zed\DataExchange\Persistence\SpyImportJobQuery;
 use Orm\Zed\DataExchange\Persistence\SpyImportJobRunErrorQuery;
 use Orm\Zed\DataExchange\Persistence\SpyImportJobRunQuery;
@@ -104,7 +105,7 @@ class DataExchangeRepository extends AbstractRepository implements DataExchangeR
         return $importJobRunCollectionTransfer;
     }
 
-    public function getImportJobRunErrorCollection(ImportJobRunErrorCriteriaTransfer $criteriaTransfer): ImportJobRunErrorCollectionTransfer
+    public function getImportJobRunErrorCollection(ImportJobRunErrorCriteriaTransfer $criteriaTransfer): ImportJobRunErrorCollectionResponseTransfer
     {
         $query = $this->getFactory()->createImportJobRunErrorQuery();
 
@@ -112,15 +113,37 @@ class DataExchangeRepository extends AbstractRepository implements DataExchangeR
 
         $query->orderByCsvRowNumber(Criteria::ASC);
 
-        $collection = new ImportJobRunErrorCollectionTransfer();
+        $importJobRunErrorCollectionResponseTransfer = (new ImportJobRunErrorCollectionResponseTransfer())
+            ->setNumberOfOmittedErrorRows($this->getNumberOfOmittedErrorRows($criteriaTransfer));
 
         foreach ($query->find() as $entity) {
-            $collection->addImportJobRunError(
+            $importJobRunErrorCollectionResponseTransfer->addImportJobRunError(
                 $this->getFactory()->createMapper()->mapImportJobRunErrorEntityToTransfer($entity, new ImportJobRunErrorTransfer()),
             );
         }
 
-        return $collection;
+        return $importJobRunErrorCollectionResponseTransfer;
+    }
+
+    /**
+     * Sums the omitted error rows of the runs the criteria selects, so the caller gets the counter together with the stored errors.
+     */
+    protected function getNumberOfOmittedErrorRows(ImportJobRunErrorCriteriaTransfer $criteriaTransfer): int
+    {
+        $importJobRunIds = $criteriaTransfer->getImportJobRunErrorConditions()?->getImportJobRunIds() ?? [];
+
+        if ($importJobRunIds === []) {
+            return 0;
+        }
+
+        $numbersOfOmittedErrorRows = $this->getFactory()
+            ->createImportJobRunQuery()
+            ->filterByIdImportJobRun_In($importJobRunIds)
+            ->select([SpyImportJobRunTableMap::COL_NUMBER_OF_OMITTED_ERROR_ROWS])
+            ->find()
+            ->getData();
+
+        return (int)array_sum(array_map('intval', $numbersOfOmittedErrorRows));
     }
 
     protected function applyImportJobConditions(SpyImportJobQuery $query, ImportJobCriteriaTransfer $criteriaTransfer): SpyImportJobQuery

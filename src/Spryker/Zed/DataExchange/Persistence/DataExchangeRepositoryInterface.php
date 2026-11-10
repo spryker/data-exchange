@@ -13,7 +13,7 @@ use Generated\Shared\Transfer\ImportJobCollectionTransfer;
 use Generated\Shared\Transfer\ImportJobCriteriaTransfer;
 use Generated\Shared\Transfer\ImportJobRunCollectionTransfer;
 use Generated\Shared\Transfer\ImportJobRunCriteriaTransfer;
-use Generated\Shared\Transfer\ImportJobRunErrorCollectionTransfer;
+use Generated\Shared\Transfer\ImportJobRunErrorCollectionResponseTransfer;
 use Generated\Shared\Transfer\ImportJobRunErrorCriteriaTransfer;
 use Generated\Shared\Transfer\ImportJobRunTransfer;
 
@@ -27,5 +27,5 @@ interface DataExchangeRepositoryInterface
 
     public function getExhaustedImportJobRunCollection(string $leaseCheckedAt, int $maxAttempts, int $limit): ImportJobRunCollectionTransfer;
 
-    public function getImportJobRunErrorCollection(ImportJobRunErrorCriteriaTransfer $criteriaTransfer): ImportJobRunErrorCollectionTransfer;
+    public function getImportJobRunErrorCollection(ImportJobRunErrorCriteriaTransfer $criteriaTransfer): ImportJobRunErrorCollectionResponseTransfer;
 }

@@ -22,6 +22,7 @@
         <property name="numberOfProcessedLines" type="int"/>
         <property name="numberOfSuccessfullyProcessedLines" type="int"/>
         <property name="numberOfFailedLines" type="int"/>
+        <property name="numberOfOmittedErrorRows" type="int"/>
         <property name="numberOfProcessedBytes" type="int"/>
         <property name="progressPercentage" type="float"/>
         <property name="fileInfo" type="ImportJobRunFileInfo"/>
@@ -60,9 +61,10 @@
         <property name="pagination" type="Pagination"/>
     </transfer>
 
-    <transfer name="ImportJobRunErrorCollection" strict="true">
+    <transfer name="ImportJobRunErrorCollectionResponse" strict="true">
         <property name="importJobRunErrors" type="ImportJobRunError[]" singular="importJobRunError"/>
         <property name="pagination" type="Pagination"/>
+        <property name="numberOfOmittedErrorRows" type="int"/>
     </transfer>
 
     <transfer name="ImportJobRunCollectionRequest" strict="true">
@@ -119,6 +121,22 @@
 
     <transfer name="ImportJobRunErrorConditions" strict="true">
         <property name="importJobRunIds" type="int[]" singular="idImportJobRun"/>
+    </transfer>
+
+    <transfer name="ImportJobRunErrorCollectionDeleteCriteria" strict="true">
+        <property name="importJobRunErrorConditions" type="ImportJobRunErrorConditions"/>
+    </transfer>
+
+    <transfer name="ImportJobRunImportResult" strict="true">
+        <property name="isLeaseLost" type="bool"/>
+        <property name="numberOfProcessedBytes" type="int"/>
+        <property name="numberOfProcessedLines" type="int"/>
+        <property name="numberOfSuccessfullyProcessedLines" type="int"/>
+        <property name="numberOfFailedLines" type="int"/>
+        <property name="numberOfRecordedErrorRows" type="int"/>
+        <property name="numberOfOmittedErrorRows" type="int"/>
+        <property name="pendingImportJobRunErrors" type="ImportJobRunError[]" singular="pendingImportJobRunError"/>
+        <property name="publishEvents" type="array" singular="publishEvent"/>
     </transfer>
 
     <transfer name="ImportJobExportResult" strict="true">

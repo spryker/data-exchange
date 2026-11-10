@@ -1,4 +1,10 @@
 {% if errors | length > 0 %}
+    {% if omittedErrorCount > 0 %}
+        <div class="alert alert-warning">
+            <i class="fa fa-exclamation-triangle"></i>
+            {{ 'The error row limit was reached: only the first %stored% of %total% errors are stored. %omitted% further errors were counted but not stored.' | trans({'%stored%': errors | length, '%total%': (errors | length) + omittedErrorCount, '%omitted%': omittedErrorCount}) }}
+        </div>
+    {% endif %}
     <table class="table table-striped table-bordered">
         <thead>
             <tr>

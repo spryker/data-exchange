@@ -34,6 +34,7 @@
         <column name="number_of_processed_lines" type="INTEGER" required="true" defaultValue="0" description="Total number of CSV rows attempted."/>
         <column name="number_of_successfully_processed_lines" type="INTEGER" required="true" defaultValue="0" description="Number of successfully processed CSV rows."/>
         <column name="number_of_failed_lines" type="INTEGER" required="true" defaultValue="0" description="Number of CSV rows that failed processing."/>
+        <column name="number_of_omitted_error_rows" type="INTEGER" required="true" defaultValue="0" description="Number of row errors that were counted but not stored because the run reached the configured error row limit."/>
         <column name="number_of_processed_bytes" type="BIGINT" required="false" description="Number of bytes of the import file read so far, or null when the file handle cannot report its position."/>
         <column name="file_info" type="LONGVARCHAR" required="true" description="JSON-encoded file metadata: fileSystemName, storedPath, originalFileName, contentType, size."/>
         <column name="import_started_at" type="TIMESTAMP" required="false" description="Timestamp when processing started."/>

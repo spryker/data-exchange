@@ -17,6 +17,7 @@ use Generated\Shared\Transfer\ImportJobRunConditionsTransfer;
 use Generated\Shared\Transfer\ImportJobRunCriteriaTransfer;
 use Generated\Shared\Transfer\ImportJobRunErrorConditionsTransfer;
 use Generated\Shared\Transfer\ImportJobRunErrorCriteriaTransfer;
+use Generated\Shared\Transfer\ImportJobRunErrorTransfer;
 use Generated\Shared\Transfer\ImportJobRunTransfer;
 use Generated\Shared\Transfer\ImportJobTransfer;
 use Generated\Shared\Transfer\ImportStepResponseTransfer;
@@ -66,6 +67,8 @@ class ProcessNextPendingRunTest extends Unit
     protected const string SECOND_WORKER = 'second-host:2';
 
     protected const string DEAD_WORKER = 'dead-host:1';
+
+    protected const string RUN_LEVEL_ERROR_ROW_KEY = 'run';
 
     protected const string LIVE_WORKER = 'live-host:2';
 
@@ -1018,6 +1021,139 @@ class ProcessNextPendingRunTest extends Unit
         );
     }
 
+    public function testStoresAtMostTheConfiguredNumberOfErrorRowsAndKeepsCountingTheRest(): void
+    {
+        // Arrange
+        $this->tester->mockConfigMethod('getImportJobRunErrorRowLimit', 3);
+        $importJobRun = $this->tester->havePendingImportJobRunWithCsvFile($this->rootDirectory, [['sku'], ['sku-1'], ['fail-2'], ['fail-3'], ['fail-4'], ['fail-5'], ['fail-6']]);
+
+        // Act
+        $this->tester->getFacade()->processNextPendingRun();
+
+        // Assert
+        $importJobRun = $this->findRun($importJobRun->getIdImportJobRunOrFail());
+        $this->assertSame(DataExchangeBusinessTester::STATUS_IMPORTED_WITH_ERRORS, $importJobRun->getStatus(), 'Reaching the limit does not change the terminal state');
+        $this->assertSame(5, $importJobRun->getNumberOfFailedLines(), 'The failed line count keeps telling the truth past the limit');
+        $this->assertSame(2, $importJobRun->getNumberOfOmittedErrorRows());
+        $this->assertSame(
+            [3, 4, 5],
+            array_map(static fn (ImportJobRunErrorTransfer $error): int => $error->getCsvRowNumberOrFail(), $this->findErrors($importJobRun->getIdImportJobRunOrFail())),
+            'The error table holds the first rows only',
+        );
+    }
+
+    public function testWritesTheOmittedErrorRowCountWithTheProgressOfEveryBatch(): void
+    {
+        // Arrange
+        $this->tester->mockConfigMethod('getImportCsvBatchSize', 2);
+        $this->tester->mockConfigMethod('getImportJobRunErrorRowLimit', 1);
+        $importJobRun = $this->tester->havePendingImportJobRunWithCsvFile($this->rootDirectory, [['sku'], ['fail-1'], ['fail-2'], ['fail-3'], ['sku-4']]);
+        $idImportJobRun = $importJobRun->getIdImportJobRunOrFail();
+        $omittedErrorRowsBeforeEachBatch = [];
+        $this->registerSchemaPlugin([$this->createStepRunningBeforeEachBatch(function () use ($idImportJobRun, &$omittedErrorRowsBeforeEachBatch): void {
+            $omittedErrorRowsBeforeEachBatch[] = $this->findRun($idImportJobRun)->getNumberOfOmittedErrorRows();
+        })]);
+
+        // Act
+        $this->tester->getFacade()->processNextPendingRun();
+
+        // Assert
+        $this->assertSame([0, 1], $omittedErrorRowsBeforeEachBatch, 'The first batch stored one error and omitted one before the second batch started');
+        $this->assertSame(2, $this->findRun($idImportJobRun)->getNumberOfOmittedErrorRows());
+        $this->assertCount(1, $this->findErrors($idImportJobRun));
+    }
+
+    public function testCountsAColumnCountMismatchAgainstTheErrorRowLimit(): void
+    {
+        // Arrange
+        $this->tester->mockConfigMethod('getImportJobRunErrorRowLimit', 1);
+        $importJobRun = $this->tester->havePendingImportJobRunWithCsvFile($this->rootDirectory, [['sku'], ['sku-1', 'extra-column'], ['fail-2']]);
+
+        // Act
+        $this->tester->getFacade()->processNextPendingRun();
+
+        // Assert
+        $importJobRun = $this->findRun($importJobRun->getIdImportJobRunOrFail());
+        $this->assertSame(2, $importJobRun->getNumberOfFailedLines());
+        $this->assertSame(1, $importJobRun->getNumberOfOmittedErrorRows());
+        $errors = $this->findErrors($importJobRun->getIdImportJobRunOrFail());
+        $this->assertCount(1, $errors);
+        $this->assertSame('Column count mismatch: expected 1 columns, got 2.', $errors[0]->getErrorMessage());
+    }
+
+    public function testStillStoresTheRunLevelErrorWhenTheErrorRowLimitIsReached(): void
+    {
+        // Arrange
+        $this->tester->mockConfigMethod('getImportCsvBatchSize', 1);
+        $this->tester->mockConfigMethod('getImportJobRunErrorRowLimit', 1);
+        $importJobRun = $this->tester->havePendingImportJobRunWithCsvFile($this->rootDirectory, [['sku'], ['fail-1'], ['fail-2'], ['throw-3']]);
+
+        // Act
+        $this->tester->getFacade()->processNextPendingRun();
+
+        // Assert
+        $importJobRun = $this->findRun($importJobRun->getIdImportJobRunOrFail());
+        $this->assertSame(DataExchangeBusinessTester::STATUS_FAILED, $importJobRun->getStatus());
+        $errorMessagesByRowNumber = $this->indexErrorMessagesByRowNumber($this->findErrors($importJobRun->getIdImportJobRunOrFail()));
+        $this->assertCount(2, $errorMessagesByRowNumber, 'The first row error and the run-level error are stored, the second row error is omitted');
+        $this->assertArrayHasKey(static::RUN_LEVEL_ERROR_ROW_KEY, $errorMessagesByRowNumber, 'The run-level error has no row number');
+        $this->assertStringStartsWith('Unhandled exception during import:', $errorMessagesByRowNumber[static::RUN_LEVEL_ERROR_ROW_KEY]);
+        $this->assertSame('Row 2 rejected by demo step.', $errorMessagesByRowNumber[2] ?? null);
+    }
+
+    public function testStoresTheRowErrorsOfABatchOnlyWhenItStillHoldsTheClaimAfterTheBatch(): void
+    {
+        // Arrange
+        $this->tester->mockConfigMethod('getImportCsvBatchSize', 1);
+        $importJobRun = $this->tester->havePendingImportJobRunWithCsvFile($this->rootDirectory, [['sku'], ['fail-1'], ['fail-2'], ['fail-3']]);
+        $idImportJobRun = $importJobRun->getIdImportJobRunOrFail();
+        $numberOfExecutedBatches = 0;
+        $this->registerSchemaPlugin([$this->createStepRunningBeforeEachBatch(function () use ($idImportJobRun, &$numberOfExecutedBatches): void {
+            $numberOfExecutedBatches++;
+
+            if ($numberOfExecutedBatches === 2) {
+                SpyImportJobRunQuery::create()
+                    ->filterByIdImportJobRun($idImportJobRun)
+                    ->update(['ClaimedBy' => static::LIVE_WORKER]);
+            }
+        })]);
+
+        // Act
+        $this->tester->getFacade()->processNextPendingRun();
+
+        // Assert
+        $this->assertSame(2, $numberOfExecutedBatches, 'The import stops once the progress write finds the claim gone');
+        $errorMessagesByRowNumber = $this->indexErrorMessagesByRowNumber($this->findErrors($idImportJobRun));
+        $this->assertSame([2], array_keys($errorMessagesByRowNumber), 'The error of the batch processed after the claim was lost is not stored, so the worker that took over never shows it twice');
+        $this->assertSame(1, $this->findRun($idImportJobRun)->getNumberOfProcessedLines());
+    }
+
+    public function testDeletesTheErrorRowsOfTheAbandonedAttemptWhenItReclaimsARun(): void
+    {
+        // Arrange
+        $importJobRun = $this->tester->havePendingImportJobRunWithCsvFile($this->rootDirectory, [['sku'], ['sku-1'], ['fail-2']], DataExchangeBusinessTester::CSV_STORED_PATH, [
+            ImportJobRunTransfer::STATUS => DataExchangeBusinessTester::STATUS_PROCESSING,
+            ImportJobRunTransfer::CLAIMED_BY => static::DEAD_WORKER,
+            ImportJobRunTransfer::LEASE_EXPIRES_AT => $this->formatLeaseTime('-1 minute'),
+            ImportJobRunTransfer::ATTEMPT_COUNT => 1,
+            ImportJobRunTransfer::NUMBER_OF_OMITTED_ERROR_ROWS => 4,
+        ]);
+        $idImportJobRun = $importJobRun->getIdImportJobRunOrFail();
+        $this->tester->haveImportJobRunError($idImportJobRun, ['csvRowNumber' => 3, 'errorMessage' => 'Recorded by the dead worker.']);
+        $this->tester->haveImportJobRunError($idImportJobRun, ['csvRowNumber' => 5, 'errorMessage' => 'Also recorded by the dead worker.']);
+
+        // Act
+        $this->tester->getFacade()->processNextPendingRun();
+
+        // Assert
+        $importJobRun = $this->findRun($idImportJobRun);
+        $this->assertSame(DataExchangeBusinessTester::STATUS_IMPORTED_WITH_ERRORS, $importJobRun->getStatus());
+        $this->assertSame(0, $importJobRun->getNumberOfOmittedErrorRows(), 'The counter of the abandoned attempt is reset with the other counters');
+        $errors = $this->findErrors($idImportJobRun);
+        $this->assertCount(1, $errors, 'Only the errors of the attempt that finished the run remain');
+        $this->assertSame('Row 3 rejected by demo step.', $errors[0]->getErrorMessage());
+    }
+
     public function testRecordsStepErrorsAndMarksTheRunImportedWithErrorsWhenSomeRowsSucceed(): void
     {
         // Arrange
@@ -1328,6 +1464,7 @@ class ProcessNextPendingRunTest extends Unit
             ->setNumberOfProcessedLines(0)
             ->setNumberOfSuccessfullyProcessedLines(0)
             ->setNumberOfFailedLines(0)
+            ->setNumberOfOmittedErrorRows(0)
             ->setUpdatedAt($claimedAt);
     }
 
@@ -1501,6 +1638,26 @@ class ProcessNextPendingRunTest extends Unit
             ->setImportJobRunConditions((new ImportJobRunConditionsTransfer())->addIdImportJobRun($idImportJobRun));
 
         return $this->tester->getFacade()->getImportJobRunCollection($criteriaTransfer)->getImportJobRuns()->getIterator()->current();
+    }
+
+    /**
+     * The error query sorts by row number, and the databases disagree on where a `NULL` row number sorts, so tests
+     * index the errors by row number instead of relying on their position.
+     *
+     * @param array<int, \Generated\Shared\Transfer\ImportJobRunErrorTransfer> $importJobRunErrorTransfers
+     *
+     * @return array<int|string, string>
+     */
+    protected function indexErrorMessagesByRowNumber(array $importJobRunErrorTransfers): array
+    {
+        $errorMessagesByRowNumber = [];
+
+        foreach ($importJobRunErrorTransfers as $importJobRunErrorTransfer) {
+            $rowKey = $importJobRunErrorTransfer->getCsvRowNumber() ?? static::RUN_LEVEL_ERROR_ROW_KEY;
+            $errorMessagesByRowNumber[$rowKey] = $importJobRunErrorTransfer->getErrorMessageOrFail();
+        }
+
+        return $errorMessagesByRowNumber;
     }
 
     /**

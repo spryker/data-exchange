@@ -18,7 +18,7 @@ use Generated\Shared\Transfer\ImportJobRunCollectionRequestTransfer;
 use Generated\Shared\Transfer\ImportJobRunCollectionResponseTransfer;
 use Generated\Shared\Transfer\ImportJobRunCollectionTransfer;
 use Generated\Shared\Transfer\ImportJobRunCriteriaTransfer;
-use Generated\Shared\Transfer\ImportJobRunErrorCollectionTransfer;
+use Generated\Shared\Transfer\ImportJobRunErrorCollectionResponseTransfer;
 use Generated\Shared\Transfer\ImportJobRunErrorCriteriaTransfer;
 
 interface DataExchangeFacadeInterface
@@ -74,11 +74,12 @@ interface DataExchangeFacadeInterface
      * Specification:
      * - Retrieves a collection of import job run errors filtered by the provided criteria.
      * - Orders errors by CSV row number ascending.
-     * - Returns `ImportJobRunErrorCollectionTransfer` with matching errors and pagination.
+     * - Sums `ImportJobRun.numberOfOmittedErrorRows` of the selected runs into `ImportJobRunErrorCollectionResponse.numberOfOmittedErrorRows`.
+     * - Returns `ImportJobRunErrorCollectionResponseTransfer` with matching errors, the omitted error row count and pagination.
      *
      * @api
      */
-    public function getImportJobRunErrorCollection(ImportJobRunErrorCriteriaTransfer $criteriaTransfer): ImportJobRunErrorCollectionTransfer;
+    public function getImportJobRunErrorCollection(ImportJobRunErrorCriteriaTransfer $criteriaTransfer): ImportJobRunErrorCollectionResponseTransfer;
 
     /**
      * Specification:

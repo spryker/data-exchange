@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace Spryker\Zed\DataExchange;
 
+use Spryker\Zed\DataExchange\Exception\InvalidImportJobRunErrorRowLimitException;
 use Spryker\Zed\Kernel\AbstractBundleConfig;
 
 class DataExchangeConfig extends AbstractBundleConfig
@@ -126,6 +127,17 @@ class DataExchangeConfig extends AbstractBundleConfig
      * - Defines how many times an import job run may be claimed before it is no longer picked up.
      */
     protected const int IMPORT_JOB_RUN_MAX_ATTEMPTS = 3;
+
+    /**
+     * Specification:
+     * - Defines the maximum number of row errors one import job run stores in `spy_import_job_run_error`.
+     * - Row errors past this limit are counted in `numberOfFailedLines` and `numberOfOmittedErrorRows` but not stored.
+     * - Fallback for the Back Office setting `data_exchange:import:job_runs:error_row_limit`, used until `configuration:sync` loaded the schema.
+     * - Must be 1 or greater, `getImportJobRunErrorRowLimit()` throws an exception otherwise.
+     */
+    protected const int IMPORT_JOB_RUN_ERROR_ROW_LIMIT = 1000;
+
+    protected const string CONFIGURATION_KEY_DATA_EXCHANGE_IMPORT_JOB_RUNS_ERROR_ROW_LIMIT = 'data_exchange:import:job_runs:error_row_limit';
 
     /**
      * Specification:
@@ -349,6 +361,35 @@ class DataExchangeConfig extends AbstractBundleConfig
     public function getImportJobRunMaxAttempts(): int
     {
         return static::IMPORT_JOB_RUN_MAX_ATTEMPTS;
+    }
+
+    /**
+     * Specification:
+     * - Returns the maximum number of row errors one import job run stores, whatever the size of its file.
+     * - Row errors past this limit are counted but not stored, so the failed line count stays exact while the error table holds the first ones.
+     * - Errors without a row number (an unhandled exception, a failed post-processor) are always stored.
+     * - Configurable in the Back Office under Configuration > Data Exchange > Import (`data_exchange:import:job_runs:error_row_limit`, default 1000); the constant applies until `configuration:sync` loaded the schema.
+     * - Must be 1 or greater, an exception is thrown otherwise.
+     *
+     * @api
+     *
+     * @throws \Spryker\Zed\DataExchange\Exception\InvalidImportJobRunErrorRowLimitException
+     */
+    public function getImportJobRunErrorRowLimit(): int
+    {
+        $errorRowLimit = (int)$this->getModuleConfig(
+            static::CONFIGURATION_KEY_DATA_EXCHANGE_IMPORT_JOB_RUNS_ERROR_ROW_LIMIT,
+            static::IMPORT_JOB_RUN_ERROR_ROW_LIMIT,
+        );
+
+        if ($errorRowLimit < 1) {
+            throw new InvalidImportJobRunErrorRowLimitException(sprintf(
+                'The import job run error row limit must be 1 or greater, %d given.',
+                $errorRowLimit,
+            ));
+        }
+
+        return $errorRowLimit;
     }
 
     /**

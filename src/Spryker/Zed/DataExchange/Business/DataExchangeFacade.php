@@ -18,7 +18,7 @@ use Generated\Shared\Transfer\ImportJobRunCollectionRequestTransfer;
 use Generated\Shared\Transfer\ImportJobRunCollectionResponseTransfer;
 use Generated\Shared\Transfer\ImportJobRunCollectionTransfer;
 use Generated\Shared\Transfer\ImportJobRunCriteriaTransfer;
-use Generated\Shared\Transfer\ImportJobRunErrorCollectionTransfer;
+use Generated\Shared\Transfer\ImportJobRunErrorCollectionResponseTransfer;
 use Generated\Shared\Transfer\ImportJobRunErrorCriteriaTransfer;
 use Spryker\Zed\Kernel\Business\AbstractFacade;
 
@@ -74,7 +74,7 @@ class DataExchangeFacade extends AbstractFacade implements DataExchangeFacadeInt
      *
      * @api
      */
-    public function getImportJobRunErrorCollection(ImportJobRunErrorCriteriaTransfer $criteriaTransfer): ImportJobRunErrorCollectionTransfer
+    public function getImportJobRunErrorCollection(ImportJobRunErrorCriteriaTransfer $criteriaTransfer): ImportJobRunErrorCollectionResponseTransfer
     {
         return $this->getRepository()->getImportJobRunErrorCollection($criteriaTransfer);
     }

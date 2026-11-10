@@ -90,6 +90,58 @@ class GetImportJobRunErrorCollectionTest extends Unit
         $this->assertSame(8, $errors->offsetGet(2)->getCsvRowNumber());
     }
 
+    public function testSumsTheOmittedErrorRowsOfTheSelectedRunsIntoTheResponse(): void
+    {
+        // Arrange
+        $importJob = $this->tester->haveImportJob();
+        $run1 = $this->tester->haveImportJobRun([
+            ImportJobRunTransfer::FK_IMPORT_JOB => $importJob->getIdImportJob(),
+            ImportJobRunTransfer::NUMBER_OF_OMITTED_ERROR_ROWS => 4,
+        ]);
+        $run2 = $this->tester->haveImportJobRun([
+            ImportJobRunTransfer::FK_IMPORT_JOB => $importJob->getIdImportJob(),
+            ImportJobRunTransfer::NUMBER_OF_OMITTED_ERROR_ROWS => 2,
+        ]);
+        $this->tester->haveImportJobRun([
+            ImportJobRunTransfer::FK_IMPORT_JOB => $importJob->getIdImportJob(),
+            ImportJobRunTransfer::NUMBER_OF_OMITTED_ERROR_ROWS => 9,
+        ]);
+        $this->tester->haveImportJobRunError($run1->getIdImportJobRun(), [
+            'csvRowNumber' => 1,
+            'errorMessage' => 'Run 1 error',
+        ]);
+
+        $criteriaTransfer = (new ImportJobRunErrorCriteriaTransfer())
+            ->setImportJobRunErrorConditions(
+                (new ImportJobRunErrorConditionsTransfer())
+                    ->addIdImportJobRun($run1->getIdImportJobRun())
+                    ->addIdImportJobRun($run2->getIdImportJobRun()),
+            );
+
+        // Act
+        $errorCollection = $this->tester->getFacade()->getImportJobRunErrorCollection($criteriaTransfer);
+
+        // Assert
+        $this->assertSame(6, $errorCollection->getNumberOfOmittedErrorRows(), 'Only the runs the criteria selects are summed');
+        $this->assertCount(1, $errorCollection->getImportJobRunErrors());
+    }
+
+    public function testReturnsZeroOmittedErrorRowsWithoutRunConditions(): void
+    {
+        // Arrange
+        $importJob = $this->tester->haveImportJob();
+        $this->tester->haveImportJobRun([
+            ImportJobRunTransfer::FK_IMPORT_JOB => $importJob->getIdImportJob(),
+            ImportJobRunTransfer::NUMBER_OF_OMITTED_ERROR_ROWS => 3,
+        ]);
+
+        // Act
+        $errorCollection = $this->tester->getFacade()->getImportJobRunErrorCollection(new ImportJobRunErrorCriteriaTransfer());
+
+        // Assert
+        $this->assertSame(0, $errorCollection->getNumberOfOmittedErrorRows());
+    }
+
     public function testReturnsOnlyErrorsForSpecificRun(): void
     {
         // Arrange

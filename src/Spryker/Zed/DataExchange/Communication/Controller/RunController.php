@@ -55,6 +55,8 @@ class RunController extends AbstractController
 
     protected const string ERROR_MESSAGE_PARAMETER_REFERENCE = '%reference%';
 
+    protected const string MESSAGE_OMITTED_ERRORS_CSV = 'The error row limit was reached: %d further errors were counted but not stored.';
+
     /**
      * @return \Symfony\Component\HttpFoundation\Response|array<string, mixed>
      */
@@ -167,17 +169,18 @@ class RunController extends AbstractController
 
         $errorConditions = (new ImportJobRunErrorConditionsTransfer())->addIdImportJobRun($idImportJobRun);
         $errorCriteria = (new ImportJobRunErrorCriteriaTransfer())->setImportJobRunErrorConditions($errorConditions);
-        $errorCollection = $this->getFacade()->getImportJobRunErrorCollection($errorCriteria);
+        $importJobRunErrorCollectionResponseTransfer = $this->getFacade()->getImportJobRunErrorCollection($errorCriteria);
 
-        $errorCount = $errorCollection->getImportJobRunErrors()->count();
+        $errorCount = $importJobRunErrorCollectionResponseTransfer->getImportJobRunErrors()->count();
         $errorThreshold = $this->getFactory()->getConfig()->getImportErrorDisplayThreshold();
         $showErrorsInline = $errorCount <= $errorThreshold;
 
         return $this->viewResponse([
             'jobRun' => $importJobRunTransfer,
             'errorCount' => $errorCount,
+            'omittedErrorCount' => $importJobRunErrorCollectionResponseTransfer->getNumberOfOmittedErrorRowsOrFail(),
             'showErrorsInline' => $showErrorsInline,
-            'inlineErrors' => $showErrorsInline ? $errorCollection->getImportJobRunErrors() : null,
+            'inlineErrors' => $showErrorsInline ? $importJobRunErrorCollectionResponseTransfer->getImportJobRunErrors() : null,
             'errorsDownloadUrl' => sprintf('%s?%s=%d', static::ROUTE_RUN_DOWNLOAD_ERRORS, static::PARAM_ID_IMPORT_JOB_RUN, $idImportJobRun),
         ]);
     }
@@ -192,10 +195,11 @@ class RunController extends AbstractController
         $errorConditions = (new ImportJobRunErrorConditionsTransfer())->addIdImportJobRun($idImportJobRun);
         $errorCriteria = (new ImportJobRunErrorCriteriaTransfer())->setImportJobRunErrorConditions($errorConditions);
 
-        $errorCollection = $this->getFacade()->getImportJobRunErrorCollection($errorCriteria);
+        $importJobRunErrorCollectionResponseTransfer = $this->getFacade()->getImportJobRunErrorCollection($errorCriteria);
 
         return $this->viewResponse([
-            'errors' => $errorCollection->getImportJobRunErrors(),
+            'errors' => $importJobRunErrorCollectionResponseTransfer->getImportJobRunErrors(),
+            'omittedErrorCount' => $importJobRunErrorCollectionResponseTransfer->getNumberOfOmittedErrorRowsOrFail(),
             'idImportJobRun' => $idImportJobRun,
         ]);
     }
@@ -206,9 +210,10 @@ class RunController extends AbstractController
 
         $errorConditions = (new ImportJobRunErrorConditionsTransfer())->addIdImportJobRun($idImportJobRun);
         $errorCriteria = (new ImportJobRunErrorCriteriaTransfer())->setImportJobRunErrorConditions($errorConditions);
-        $errorCollection = $this->getFacade()->getImportJobRunErrorCollection($errorCriteria);
+        $importJobRunErrorCollectionResponseTransfer = $this->getFacade()->getImportJobRunErrorCollection($errorCriteria);
+        $omittedErrorCount = $importJobRunErrorCollectionResponseTransfer->getNumberOfOmittedErrorRowsOrFail();
 
-        $response = new StreamedResponse(static function () use ($errorCollection): void {
+        $response = new StreamedResponse(static function () use ($importJobRunErrorCollectionResponseTransfer, $omittedErrorCount): void {
             $handle = fopen('php://output', 'w');
 
             if ($handle === false) {
@@ -217,10 +222,17 @@ class RunController extends AbstractController
 
             fputcsv($handle, ['Row Number', 'Error Message']);
 
-            foreach ($errorCollection->getImportJobRunErrors() as $error) {
+            foreach ($importJobRunErrorCollectionResponseTransfer->getImportJobRunErrors() as $error) {
                 fputcsv($handle, [
                     $error->getCsvRowNumber() ?? '',
                     $error->getErrorMessage(),
+                ]);
+            }
+
+            if ($omittedErrorCount > 0) {
+                fputcsv($handle, [
+                    '',
+                    sprintf(static::MESSAGE_OMITTED_ERRORS_CSV, $omittedErrorCount),
                 ]);
             }
 

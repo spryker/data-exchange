@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace Spryker\Zed\DataExchange\Persistence;
 
+use Generated\Shared\Transfer\ImportJobRunErrorCollectionDeleteCriteriaTransfer;
 use Generated\Shared\Transfer\ImportJobRunErrorTransfer;
 use Generated\Shared\Transfer\ImportJobRunTransfer;
 use Generated\Shared\Transfer\ImportJobTransfer;
@@ -84,6 +85,7 @@ class DataExchangeEntityManager extends AbstractEntityManager implements DataExc
                 'NumberOfProcessedLines' => $importJobRunTransfer->getNumberOfProcessedLinesOrFail(),
                 'NumberOfSuccessfullyProcessedLines' => $importJobRunTransfer->getNumberOfSuccessfullyProcessedLinesOrFail(),
                 'NumberOfFailedLines' => $importJobRunTransfer->getNumberOfFailedLinesOrFail(),
+                'NumberOfOmittedErrorRows' => $importJobRunTransfer->getNumberOfOmittedErrorRowsOrFail(),
                 'NumberOfProcessedBytes' => $importJobRunTransfer->getNumberOfProcessedBytes(),
                 'UpdatedAt' => $importJobRunTransfer->getUpdatedAtOrFail(),
             ]);
@@ -105,6 +107,7 @@ class DataExchangeEntityManager extends AbstractEntityManager implements DataExc
                 'NumberOfProcessedLines' => $importJobRunTransfer->getNumberOfProcessedLinesOrFail(),
                 'NumberOfSuccessfullyProcessedLines' => $importJobRunTransfer->getNumberOfSuccessfullyProcessedLinesOrFail(),
                 'NumberOfFailedLines' => $importJobRunTransfer->getNumberOfFailedLinesOrFail(),
+                'NumberOfOmittedErrorRows' => $importJobRunTransfer->getNumberOfOmittedErrorRowsOrFail(),
                 'NumberOfProcessedBytes' => $importJobRunTransfer->getNumberOfProcessedBytes(),
                 'UpdatedAt' => $importJobRunTransfer->getUpdatedAtOrFail(),
             ]);
@@ -140,5 +143,20 @@ class DataExchangeEntityManager extends AbstractEntityManager implements DataExc
         $importJobRunErrorEntity->save();
 
         return $importJobRunErrorTransfer->setIdImportJobRunError($importJobRunErrorEntity->getIdImportJobRunError());
+    }
+
+    public function deleteImportJobRunErrorCollection(
+        ImportJobRunErrorCollectionDeleteCriteriaTransfer $importJobRunErrorCollectionDeleteCriteriaTransfer
+    ): void {
+        $importJobRunIds = $importJobRunErrorCollectionDeleteCriteriaTransfer->getImportJobRunErrorConditions()?->getImportJobRunIds() ?? [];
+
+        if ($importJobRunIds === []) {
+            return;
+        }
+
+        $this->getFactory()
+            ->createImportJobRunErrorQuery()
+            ->filterByFkImportJobRun_In($importJobRunIds)
+            ->delete();
     }
 }
