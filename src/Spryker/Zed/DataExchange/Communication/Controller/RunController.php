@@ -14,6 +14,7 @@ use Generated\Shared\Transfer\ImportJobRunErrorConditionsTransfer;
 use Generated\Shared\Transfer\ImportJobRunErrorCriteriaTransfer;
 use Generated\Shared\Transfer\ImportJobRunFileInfoTransfer;
 use Generated\Shared\Transfer\ImportJobRunTransfer;
+use Generated\Shared\Transfer\PaginationTransfer;
 use Spryker\Zed\DataExchange\Communication\Form\ImportJobRunForm;
 use Spryker\Zed\Kernel\Communication\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
@@ -168,11 +169,13 @@ class RunController extends AbstractController
         }
 
         $errorConditions = (new ImportJobRunErrorConditionsTransfer())->addIdImportJobRun($idImportJobRun);
-        $errorCriteria = (new ImportJobRunErrorCriteriaTransfer())->setImportJobRunErrorConditions($errorConditions);
+        $errorThreshold = $this->getFactory()->getConfig()->getImportErrorDisplayThreshold();
+        $errorCriteria = (new ImportJobRunErrorCriteriaTransfer())
+            ->setImportJobRunErrorConditions($errorConditions)
+            ->setPagination((new PaginationTransfer())->setLimit($errorThreshold));
         $importJobRunErrorCollectionResponseTransfer = $this->getFacade()->getImportJobRunErrorCollection($errorCriteria);
 
-        $errorCount = $importJobRunErrorCollectionResponseTransfer->getImportJobRunErrors()->count();
-        $errorThreshold = $this->getFactory()->getConfig()->getImportErrorDisplayThreshold();
+        $errorCount = $importJobRunErrorCollectionResponseTransfer->getPaginationOrFail()->getNbResultsOrFail();
         $showErrorsInline = $errorCount <= $errorThreshold;
 
         return $this->viewResponse([
@@ -193,7 +196,9 @@ class RunController extends AbstractController
         $idImportJobRun = $this->castId($request->query->get(static::PARAM_ID_IMPORT_JOB_RUN));
 
         $errorConditions = (new ImportJobRunErrorConditionsTransfer())->addIdImportJobRun($idImportJobRun);
-        $errorCriteria = (new ImportJobRunErrorCriteriaTransfer())->setImportJobRunErrorConditions($errorConditions);
+        $errorCriteria = (new ImportJobRunErrorCriteriaTransfer())
+            ->setImportJobRunErrorConditions($errorConditions)
+            ->setPagination((new PaginationTransfer())->setLimit($this->getFactory()->getConfig()->getImportErrorDisplayThreshold()));
 
         $importJobRunErrorCollectionResponseTransfer = $this->getFacade()->getImportJobRunErrorCollection($errorCriteria);
 
@@ -210,10 +215,10 @@ class RunController extends AbstractController
 
         $errorConditions = (new ImportJobRunErrorConditionsTransfer())->addIdImportJobRun($idImportJobRun);
         $errorCriteria = (new ImportJobRunErrorCriteriaTransfer())->setImportJobRunErrorConditions($errorConditions);
-        $importJobRunErrorCollectionResponseTransfer = $this->getFacade()->getImportJobRunErrorCollection($errorCriteria);
-        $omittedErrorCount = $importJobRunErrorCollectionResponseTransfer->getNumberOfOmittedErrorRowsOrFail();
+        $batchSize = $this->getFactory()->getConfig()->getImportErrorExportBatchSize();
+        $dataExchangeFacade = $this->getFacade();
 
-        $response = new StreamedResponse(static function () use ($importJobRunErrorCollectionResponseTransfer, $omittedErrorCount): void {
+        $response = new StreamedResponse(static function () use ($dataExchangeFacade, $errorCriteria, $batchSize): void {
             $handle = fopen('php://output', 'w');
 
             if ($handle === false) {
@@ -222,12 +227,24 @@ class RunController extends AbstractController
 
             fputcsv($handle, ['Row Number', 'Error Message']);
 
-            foreach ($importJobRunErrorCollectionResponseTransfer->getImportJobRunErrors() as $error) {
-                fputcsv($handle, [
-                    $error->getCsvRowNumber() ?? '',
-                    $error->getErrorMessage(),
-                ]);
-            }
+            $offset = 0;
+
+            do {
+                $errorCriteria->setPagination((new PaginationTransfer())->setLimit($batchSize)->setOffset($offset));
+                $importJobRunErrorCollectionResponseTransfer = $dataExchangeFacade->getImportJobRunErrorCollection($errorCriteria);
+                $importJobRunErrorTransfers = $importJobRunErrorCollectionResponseTransfer->getImportJobRunErrors();
+
+                foreach ($importJobRunErrorTransfers as $importJobRunErrorTransfer) {
+                    fputcsv($handle, [
+                        $importJobRunErrorTransfer->getCsvRowNumber() ?? '',
+                        $importJobRunErrorTransfer->getErrorMessage(),
+                    ]);
+                }
+
+                $offset += $batchSize;
+            } while ($importJobRunErrorTransfers->count() === $batchSize);
+
+            $omittedErrorCount = $importJobRunErrorCollectionResponseTransfer->getNumberOfOmittedErrorRowsOrFail();
 
             if ($omittedErrorCount > 0) {
                 fputcsv($handle, [

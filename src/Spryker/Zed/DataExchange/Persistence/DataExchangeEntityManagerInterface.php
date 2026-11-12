@@ -35,4 +35,9 @@ interface DataExchangeEntityManagerInterface
     ): void;
 
     public function updateExhaustedImportJobRun(ImportJobRunTransfer $importJobRunTransfer, string $leaseCheckedAt, int $maxAttempts): bool;
+
+    /**
+     * @param list<int> $importJobRunIds
+     */
+    public function deleteImportJobRuns(array $importJobRunIds): int;
 }

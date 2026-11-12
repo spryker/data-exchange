@@ -20,12 +20,16 @@ use Spryker\Zed\DataExchange\Business\ImportJob\Writer\ImportJobWriter;
 use Spryker\Zed\DataExchange\Business\ImportJob\Writer\ImportJobWriterInterface;
 use Spryker\Zed\DataExchange\Business\ImportJobRun\Claimer\ImportJobRunClaimer;
 use Spryker\Zed\DataExchange\Business\ImportJobRun\Claimer\ImportJobRunClaimerInterface;
+use Spryker\Zed\DataExchange\Business\ImportJobRun\Deleter\ImportJobRunDeleter;
+use Spryker\Zed\DataExchange\Business\ImportJobRun\Deleter\ImportJobRunDeleterInterface;
 use Spryker\Zed\DataExchange\Business\ImportJobRun\Importer\ImportJobRunImporter;
 use Spryker\Zed\DataExchange\Business\ImportJobRun\Importer\ImportJobRunImporterInterface;
 use Spryker\Zed\DataExchange\Business\ImportJobRun\Manager\ImportJobRunManager;
 use Spryker\Zed\DataExchange\Business\ImportJobRun\Manager\ImportJobRunManagerInterface;
 use Spryker\Zed\DataExchange\Business\ImportJobRun\Mapper\CsvHeaderMapper;
 use Spryker\Zed\DataExchange\Business\ImportJobRun\Mapper\CsvHeaderMapperInterface;
+use Spryker\Zed\DataExchange\Business\ImportJobRun\Pruner\ImportJobRunPruner;
+use Spryker\Zed\DataExchange\Business\ImportJobRun\Pruner\ImportJobRunPrunerInterface;
 use Spryker\Zed\DataExchange\Business\ImportJobRun\Reader\ImportJobRunReader;
 use Spryker\Zed\DataExchange\Business\ImportJobRun\Reader\ImportJobRunReaderInterface;
 use Spryker\Zed\DataExchange\Business\ImportJobRun\Resolver\ImportJobRunClaimSettingsResolver;
@@ -85,6 +89,20 @@ class DataExchangeBusinessFactory extends AbstractBusinessFactory
             $this->getConfig(),
             $this->createImportJobRunClaimSettingsResolver(),
         );
+    }
+
+    public function createImportJobRunPruner(): ImportJobRunPrunerInterface
+    {
+        return new ImportJobRunPruner(
+            $this->getRepository(),
+            $this->createImportJobRunDeleter(),
+            $this->getConfig(),
+        );
+    }
+
+    public function createImportJobRunDeleter(): ImportJobRunDeleterInterface
+    {
+        return new ImportJobRunDeleter($this->getEntityManager(), $this->getFileSystemService(), $this->getConfig());
     }
 
     public function createImportJobRunClaimSettingsResolver(): ImportJobRunClaimSettingsResolverInterface

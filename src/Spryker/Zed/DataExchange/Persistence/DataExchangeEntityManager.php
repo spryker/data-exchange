@@ -133,6 +133,17 @@ class DataExchangeEntityManager extends AbstractEntityManager implements DataExc
         return $affectedRowCount === 1;
     }
 
+    /**
+     * @param list<int> $importJobRunIds
+     */
+    public function deleteImportJobRuns(array $importJobRunIds): int
+    {
+        return $this->getFactory()
+            ->createImportJobRunQuery()
+            ->filterByIdImportJobRun_In($importJobRunIds)
+            ->delete();
+    }
+
     public function createImportJobRunError(ImportJobRunErrorTransfer $importJobRunErrorTransfer): ImportJobRunErrorTransfer
     {
         $importJobRunErrorEntity = (new SpyImportJobRunError())

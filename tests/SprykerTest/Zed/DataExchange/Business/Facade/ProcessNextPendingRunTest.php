@@ -21,6 +21,7 @@ use Generated\Shared\Transfer\ImportJobRunErrorTransfer;
 use Generated\Shared\Transfer\ImportJobRunTransfer;
 use Generated\Shared\Transfer\ImportJobTransfer;
 use Generated\Shared\Transfer\ImportStepResponseTransfer;
+use Generated\Shared\Transfer\PaginationTransfer;
 use Orm\Zed\DataExchange\Persistence\Map\SpyImportJobRunTableMap;
 use Orm\Zed\DataExchange\Persistence\SpyImportJobRunQuery;
 use Propel\Runtime\Connection\ConnectionInterface;
@@ -1666,7 +1667,8 @@ class ProcessNextPendingRunTest extends Unit
     protected function findErrors(int $idImportJobRun): array
     {
         $criteriaTransfer = (new ImportJobRunErrorCriteriaTransfer())
-            ->setImportJobRunErrorConditions((new ImportJobRunErrorConditionsTransfer())->addIdImportJobRun($idImportJobRun));
+            ->setImportJobRunErrorConditions((new ImportJobRunErrorConditionsTransfer())->addIdImportJobRun($idImportJobRun))
+            ->setPagination((new PaginationTransfer())->setLimit(PHP_INT_MAX));
 
         return array_values(
             $this->tester->getFacade()->getImportJobRunErrorCollection($criteriaTransfer)->getImportJobRunErrors()->getArrayCopy(),

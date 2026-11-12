@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace Spryker\Zed\DataExchange\Persistence\Propel\Mapper;
 
+use Generated\Shared\Transfer\ImportJobRunCollectionTransfer;
 use Generated\Shared\Transfer\ImportJobRunErrorTransfer;
 use Generated\Shared\Transfer\ImportJobRunFileInfoTransfer;
 use Generated\Shared\Transfer\ImportJobRunTransfer;
@@ -16,6 +17,7 @@ use Generated\Shared\Transfer\ImportJobTransfer;
 use Orm\Zed\DataExchange\Persistence\SpyImportJob;
 use Orm\Zed\DataExchange\Persistence\SpyImportJobRun;
 use Orm\Zed\DataExchange\Persistence\SpyImportJobRunError;
+use Propel\Runtime\Collection\Collection;
 use Propel\Runtime\Collection\ObjectCollection;
 use Spryker\Service\UtilEncoding\UtilEncodingServiceInterface;
 
@@ -58,6 +60,20 @@ class DataExchangeMapper
         $entity->setDefinition((string)$this->utilEncodingService->encodeJson($importJobTransfer->getDefinition()));
 
         return $entity;
+    }
+
+    /**
+     * @param \Propel\Runtime\Collection\Collection<\Orm\Zed\DataExchange\Persistence\SpyImportJobRun> $importJobRunEntities
+     */
+    public function mapImportJobRunEntitiesToImportJobRunCollectionTransfer(
+        Collection $importJobRunEntities,
+        ImportJobRunCollectionTransfer $importJobRunCollectionTransfer,
+    ): ImportJobRunCollectionTransfer {
+        foreach ($importJobRunEntities as $importJobRunEntity) {
+            $importJobRunCollectionTransfer->addImportJobRun($this->mapImportJobRunEntityToTransfer($importJobRunEntity, new ImportJobRunTransfer()));
+        }
+
+        return $importJobRunCollectionTransfer;
     }
 
     public function mapImportJobRunEntityToTransfer(SpyImportJobRun $entity, ImportJobRunTransfer $transfer): ImportJobRunTransfer

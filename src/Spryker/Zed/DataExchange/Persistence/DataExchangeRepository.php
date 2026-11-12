@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace Spryker\Zed\DataExchange\Persistence;
 
+use ArrayObject;
 use Generated\Shared\Transfer\ImportJobCollectionTransfer;
 use Generated\Shared\Transfer\ImportJobCriteriaTransfer;
 use Generated\Shared\Transfer\ImportJobRunCollectionTransfer;
@@ -17,6 +18,7 @@ use Generated\Shared\Transfer\ImportJobRunErrorCollectionResponseTransfer;
 use Generated\Shared\Transfer\ImportJobRunErrorCriteriaTransfer;
 use Generated\Shared\Transfer\ImportJobRunErrorTransfer;
 use Generated\Shared\Transfer\ImportJobRunTransfer;
+use Generated\Shared\Transfer\PaginationTransfer;
 use Orm\Zed\DataExchange\Persistence\Map\SpyImportJobRunTableMap;
 use Orm\Zed\DataExchange\Persistence\SpyImportJobQuery;
 use Orm\Zed\DataExchange\Persistence\SpyImportJobRunErrorQuery;
@@ -51,19 +53,19 @@ class DataExchangeRepository extends AbstractRepository implements DataExchangeR
     public function getImportJobRunCollection(ImportJobRunCriteriaTransfer $criteriaTransfer): ImportJobRunCollectionTransfer
     {
         $query = $this->getFactory()->createImportJobRunQuery();
-        $mapper = $this->getFactory()->createMapper();
 
         $query = $this->applyImportJobRunConditions($query, $criteriaTransfer);
+        $query = $this->applyImportJobRunSorting($query, $criteriaTransfer->getSortCollection());
 
-        $entities = $query->orderByCreatedAt(Criteria::DESC)->find();
-
-        $importJobRunCollectionTransfer = new ImportJobRunCollectionTransfer();
-
-        foreach ($entities as $entity) {
-            $importJobRunCollectionTransfer->addImportJobRun($mapper->mapImportJobRunEntityToTransfer($entity, new ImportJobRunTransfer()));
+        if ($criteriaTransfer->getPagination() !== null) {
+            $query = $this->applyPagination($query, $criteriaTransfer->getPagination());
         }
 
-        return $importJobRunCollectionTransfer;
+        $entities = $query->find();
+
+        return $this->getFactory()
+            ->createMapper()
+            ->mapImportJobRunEntitiesToImportJobRunCollectionTransfer($entities, new ImportJobRunCollectionTransfer());
     }
 
     public function findOldestClaimableImportJobRun(string $leaseCheckedAt, int $maxAttempts): ?ImportJobRunTransfer
@@ -95,26 +97,31 @@ class DataExchangeRepository extends AbstractRepository implements DataExchangeR
             ->setLimit($limit)
             ->find();
 
-        $importJobRunCollectionTransfer = new ImportJobRunCollectionTransfer();
-        $mapper = $this->getFactory()->createMapper();
-
-        foreach ($importJobRunEntities as $importJobRunEntity) {
-            $importJobRunCollectionTransfer->addImportJobRun($mapper->mapImportJobRunEntityToTransfer($importJobRunEntity, new ImportJobRunTransfer()));
-        }
-
-        return $importJobRunCollectionTransfer;
+        return $this->getFactory()
+            ->createMapper()
+            ->mapImportJobRunEntitiesToImportJobRunCollectionTransfer($importJobRunEntities, new ImportJobRunCollectionTransfer());
     }
 
     public function getImportJobRunErrorCollection(ImportJobRunErrorCriteriaTransfer $criteriaTransfer): ImportJobRunErrorCollectionResponseTransfer
     {
         $query = $this->getFactory()->createImportJobRunErrorQuery();
 
+        $paginationTransfer = $criteriaTransfer->getPaginationOrFail();
+
         $query = $this->applyImportJobRunErrorConditions($query, $criteriaTransfer);
 
-        $query->orderByCsvRowNumber(Criteria::ASC);
+        $query->orderByCsvRowNumber(Criteria::ASC)->orderByIdImportJobRunError(Criteria::ASC);
 
         $importJobRunErrorCollectionResponseTransfer = (new ImportJobRunErrorCollectionResponseTransfer())
-            ->setNumberOfOmittedErrorRows($this->getNumberOfOmittedErrorRows($criteriaTransfer));
+            ->setNumberOfOmittedErrorRows($this->getNumberOfOmittedErrorRows($criteriaTransfer))
+            ->setPagination(
+                (new PaginationTransfer())
+                    ->setLimit($paginationTransfer->getLimitOrFail())
+                    ->setOffset($paginationTransfer->getOffset() ?? 0)
+                    ->setNbResults($query->count()),
+            );
+
+        $query->setLimit($paginationTransfer->getLimitOrFail())->setOffset($paginationTransfer->getOffset() ?? 0);
 
         foreach ($query->find() as $entity) {
             $importJobRunErrorCollectionResponseTransfer->addImportJobRunError(
@@ -187,6 +194,39 @@ class DataExchangeRepository extends AbstractRepository implements DataExchangeR
 
         if ($conditions->getStatuses()) {
             $query->filterByStatus_In($conditions->getStatuses());
+        }
+
+        if ($conditions->getUpdatedBefore() !== null) {
+            $query->filterByUpdatedAt($conditions->getUpdatedBefore(), Criteria::LESS_THAN);
+        }
+
+        if ($conditions->getIdImportJobRunGreaterThan() !== null) {
+            $query->filterByIdImportJobRun($conditions->getIdImportJobRunGreaterThan(), Criteria::GREATER_THAN);
+        }
+
+        return $query;
+    }
+
+    /**
+     * @param \ArrayObject<int, \Generated\Shared\Transfer\SortTransfer> $sortTransfers
+     */
+    protected function applyImportJobRunSorting(SpyImportJobRunQuery $query, ArrayObject $sortTransfers): SpyImportJobRunQuery
+    {
+        if ($sortTransfers->count() === 0) {
+            return $query->orderByCreatedAt(Criteria::DESC);
+        }
+
+        foreach ($sortTransfers as $sortTransfer) {
+            $query->orderBy($sortTransfer->getFieldOrFail(), $sortTransfer->getIsAscending() ? Criteria::ASC : Criteria::DESC);
+        }
+
+        return $query;
+    }
+
+    protected function applyPagination(SpyImportJobRunQuery $query, PaginationTransfer $paginationTransfer): SpyImportJobRunQuery
+    {
+        if ($paginationTransfer->getLimit() !== null) {
+            $query->setLimit($paginationTransfer->getLimit());
         }
 
         return $query;

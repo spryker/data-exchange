@@ -18,6 +18,7 @@ use Generated\Shared\Transfer\ImportJobRunCollectionRequestTransfer;
 use Generated\Shared\Transfer\ImportJobRunCollectionResponseTransfer;
 use Generated\Shared\Transfer\ImportJobRunCollectionTransfer;
 use Generated\Shared\Transfer\ImportJobRunCriteriaTransfer;
+use Generated\Shared\Transfer\ImportJobRunDeleteResponseTransfer;
 use Generated\Shared\Transfer\ImportJobRunErrorCollectionResponseTransfer;
 use Generated\Shared\Transfer\ImportJobRunErrorCriteriaTransfer;
 
@@ -62,6 +63,10 @@ interface DataExchangeFacadeInterface
     /**
      * Specification:
      * - Retrieves a collection of import job runs filtered by the provided criteria.
+     * - Filters by `ImportJobRunConditionsTransfer.updatedBefore` when set: returns only runs last updated before it.
+     * - Filters by `ImportJobRunConditionsTransfer.idImportJobRunGreaterThan` when set: returns only runs with a higher id.
+     * - Orders runs by `ImportJobRunCriteriaTransfer.sortCollection`, or by creation date descending when it is empty.
+     * - Applies `ImportJobRunCriteriaTransfer.pagination` limit when set.
      * - Expands each run with `ImportJobRunTransfer.progressPercentage`: processed bytes divided by the file size, between 0 and 100.
      * - Sets `ImportJobRunTransfer.progressPercentage` to `null` when the processed bytes or the file size are unknown.
      * - Returns `ImportJobRunCollectionTransfer` with matching runs and pagination.
@@ -73,9 +78,10 @@ interface DataExchangeFacadeInterface
     /**
      * Specification:
      * - Retrieves a collection of import job run errors filtered by the provided criteria.
-     * - Orders errors by CSV row number ascending.
+     * - Requires `ImportJobRunErrorCriteriaTransfer.pagination.limit`; applies it and `pagination.offset` when set.
+     * - Orders errors by CSV row number ascending, then by id.
      * - Sums `ImportJobRun.numberOfOmittedErrorRows` of the selected runs into `ImportJobRunErrorCollectionResponse.numberOfOmittedErrorRows`.
-     * - Returns `ImportJobRunErrorCollectionResponseTransfer` with matching errors, the omitted error row count and pagination.
+     * - Returns `ImportJobRunErrorCollectionResponseTransfer` with the errors of the requested page, the omitted error row count and pagination with `nbResults` set to the number of all matching errors.
      *
      * @api
      */
@@ -120,4 +126,22 @@ interface DataExchangeFacadeInterface
      * @api
      */
     public function processNextPendingRun(): bool;
+
+    /**
+     * Specification:
+     * - Narrows the pruned runs by `ImportJobRunCriteriaTransfer.importJobRunConditions.importJobRunIds` and `importJobIds` when set; an empty criteria prunes every prunable run.
+     * - Does not use the requested statuses, `updatedBefore`, sorting or pagination: the prunable statuses, the retention, the id order and the batch size always apply.
+     * - Throws `InvalidImportJobRunPruneConfigurationException` and deletes nothing when `DataExchangeConfig::getImportJobRunRetentionInDays()` or `DataExchangeConfig::getImportJobRunPruneBatchSize()` is below 1.
+     * - Deletes import job runs in status done, imported with errors, failed or receiving whose last update is older than `DataExchangeConfig::getImportJobRunRetentionInDays()`, in ascending id order, in batches of `DataExchangeConfig::getImportJobRunPruneBatchSize()`.
+     * - The retention of at least one day keeps an upload in progress from being deleted.
+     * - Never deletes a pending or processing run, whatever the retention is.
+     * - Per batch, deletes the stored file of each run first, then the rows of all runs whose file was deleted in one statement; a run without a stored file, or whose file is already missing, is deleted without error.
+     * - The errors of a deleted run are removed with it through the foreign key cascade.
+     * - Keeps a run whose file cannot be deleted, and every run of the batch when its rows cannot be deleted; logs the cause and reports an error naming each kept run. The remaining runs are still pruned and the kept runs are retried by the next call.
+     * - Does not count a run that was already deleted by someone else.
+     * - Returns `ImportJobRunDeleteResponseTransfer` with the number of deleted runs and an error per kept run.
+     *
+     * @api
+     */
+    public function pruneImportJobRuns(ImportJobRunCriteriaTransfer $importJobRunCriteriaTransfer): ImportJobRunDeleteResponseTransfer;
 }

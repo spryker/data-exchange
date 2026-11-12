@@ -14,12 +14,29 @@ features:
             groups:
                 - key: job_runs
                   name: Import Job Runs
-                  description: Controls what an import job run stores.
+                  description: Controls what an import job run stores and how long it is kept.
                   enabled: true
                   order: 0
                   scopes:
                       - global
                   settings:
+                      - key: retention_in_days
+                        name: Import Job Run Retention
+                        description: Number of days a done, imported with errors, failed or receiving import job run is kept after its last update before import:job:prune deletes it together with its stored file and errors. Pending and processing runs are never deleted.
+                        placeholder: Enter time in days
+                        type: integer
+                        default_value: 90
+                        enabled: true
+                        secret: false
+                        storefront: false
+                        scopes:
+                            - global
+                        constraints:
+                            - type: required
+                              message: Import job run retention is required
+                            - type: min
+                              message: Must be at least 1 day
+                              options: { min: 1 }
                       - key: error_row_limit
                         name: Import Job Run Error Row Limit
                         description: Maximum number of row errors one import job run stores, whatever the size of its file. Row errors past this limit are counted on the run but not stored, so one bad file cannot fill the error table. Errors without a row number are always stored.

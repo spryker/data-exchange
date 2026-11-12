@@ -18,6 +18,7 @@ use Generated\Shared\Transfer\ImportJobRunCollectionRequestTransfer;
 use Generated\Shared\Transfer\ImportJobRunCollectionResponseTransfer;
 use Generated\Shared\Transfer\ImportJobRunCollectionTransfer;
 use Generated\Shared\Transfer\ImportJobRunCriteriaTransfer;
+use Generated\Shared\Transfer\ImportJobRunDeleteResponseTransfer;
 use Generated\Shared\Transfer\ImportJobRunErrorCollectionResponseTransfer;
 use Generated\Shared\Transfer\ImportJobRunErrorCriteriaTransfer;
 use Spryker\Zed\Kernel\Business\AbstractFacade;
@@ -97,5 +98,15 @@ class DataExchangeFacade extends AbstractFacade implements DataExchangeFacadeInt
     public function processNextPendingRun(): bool
     {
         return $this->getFactory()->createImportJobRunManager()->processNextPendingRun();
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * @api
+     */
+    public function pruneImportJobRuns(ImportJobRunCriteriaTransfer $importJobRunCriteriaTransfer): ImportJobRunDeleteResponseTransfer
+    {
+        return $this->getFactory()->createImportJobRunPruner()->pruneImportJobRuns($importJobRunCriteriaTransfer);
     }
 }

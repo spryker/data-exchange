@@ -13,6 +13,8 @@ use Codeception\Test\Unit;
 use Generated\Shared\Transfer\ImportJobRunErrorConditionsTransfer;
 use Generated\Shared\Transfer\ImportJobRunErrorCriteriaTransfer;
 use Generated\Shared\Transfer\ImportJobRunTransfer;
+use Generated\Shared\Transfer\PaginationTransfer;
+use Spryker\Shared\Kernel\Transfer\Exception\NullValueException;
 use SprykerTest\Zed\DataExchange\DataExchangeBusinessTester;
 
 /**
@@ -28,7 +30,54 @@ use SprykerTest\Zed\DataExchange\DataExchangeBusinessTester;
  */
 class GetImportJobRunErrorCollectionTest extends Unit
 {
+    protected const int LIMIT = 100;
+
     protected DataExchangeBusinessTester $tester;
+
+    public function testReturnsTheRequestedPageAndTheNumberOfAllErrors(): void
+    {
+        // Arrange
+        $importJob = $this->tester->haveImportJob();
+        $importJobRun = $this->tester->haveImportJobRun([
+            ImportJobRunTransfer::FK_IMPORT_JOB => $importJob->getIdImportJob(),
+        ]);
+
+        foreach ([1, 2, 3, 4, 5] as $csvRowNumber) {
+            $this->tester->haveImportJobRunError($importJobRun->getIdImportJobRun(), [
+                'csvRowNumber' => $csvRowNumber,
+                'errorMessage' => 'Error on row ' . $csvRowNumber,
+            ]);
+        }
+
+        $criteriaTransfer = (new ImportJobRunErrorCriteriaTransfer())
+            ->setImportJobRunErrorConditions(
+                (new ImportJobRunErrorConditionsTransfer())
+                    ->addIdImportJobRun($importJobRun->getIdImportJobRun()),
+            )
+            ->setPagination((new PaginationTransfer())->setLimit(2)->setOffset(2));
+
+        // Act
+        $errorCollection = $this->tester->getFacade()->getImportJobRunErrorCollection($criteriaTransfer);
+
+        // Assert
+        $errors = $errorCollection->getImportJobRunErrors();
+        $this->assertCount(2, $errors);
+        $this->assertSame(3, $errors->offsetGet(0)->getCsvRowNumber());
+        $this->assertSame(4, $errors->offsetGet(1)->getCsvRowNumber());
+        $this->assertSame(5, $errorCollection->getPaginationOrFail()->getNbResults());
+    }
+
+    public function testThrowsWhenNoLimitIsGiven(): void
+    {
+        // Arrange
+        $criteriaTransfer = (new ImportJobRunErrorCriteriaTransfer())->setPagination(new PaginationTransfer());
+
+        // Assert
+        $this->expectException(NullValueException::class);
+
+        // Act
+        $this->tester->getFacade()->getImportJobRunErrorCollection($criteriaTransfer);
+    }
 
     public function testReturnsEmptyCollectionWhenNoErrorsExist(): void
     {
@@ -42,7 +91,8 @@ class GetImportJobRunErrorCollectionTest extends Unit
             ->setImportJobRunErrorConditions(
                 (new ImportJobRunErrorConditionsTransfer())
                     ->addIdImportJobRun($importJobRun->getIdImportJobRun()),
-            );
+            )
+            ->setPagination((new PaginationTransfer())->setLimit(static::LIMIT));
 
         // Act
         $errorCollection = $this->tester->getFacade()->getImportJobRunErrorCollection($criteriaTransfer);
@@ -76,7 +126,8 @@ class GetImportJobRunErrorCollectionTest extends Unit
             ->setImportJobRunErrorConditions(
                 (new ImportJobRunErrorConditionsTransfer())
                     ->addIdImportJobRun($importJobRun->getIdImportJobRun()),
-            );
+            )
+            ->setPagination((new PaginationTransfer())->setLimit(static::LIMIT));
 
         // Act
         $errorCollection = $this->tester->getFacade()->getImportJobRunErrorCollection($criteriaTransfer);
@@ -116,7 +167,8 @@ class GetImportJobRunErrorCollectionTest extends Unit
                 (new ImportJobRunErrorConditionsTransfer())
                     ->addIdImportJobRun($run1->getIdImportJobRun())
                     ->addIdImportJobRun($run2->getIdImportJobRun()),
-            );
+            )
+            ->setPagination((new PaginationTransfer())->setLimit(static::LIMIT));
 
         // Act
         $errorCollection = $this->tester->getFacade()->getImportJobRunErrorCollection($criteriaTransfer);
@@ -136,7 +188,9 @@ class GetImportJobRunErrorCollectionTest extends Unit
         ]);
 
         // Act
-        $errorCollection = $this->tester->getFacade()->getImportJobRunErrorCollection(new ImportJobRunErrorCriteriaTransfer());
+        $errorCollection = $this->tester->getFacade()->getImportJobRunErrorCollection(
+            (new ImportJobRunErrorCriteriaTransfer())->setPagination((new PaginationTransfer())->setLimit(static::LIMIT)),
+        );
 
         // Assert
         $this->assertSame(0, $errorCollection->getNumberOfOmittedErrorRows());
@@ -166,7 +220,8 @@ class GetImportJobRunErrorCollectionTest extends Unit
             ->setImportJobRunErrorConditions(
                 (new ImportJobRunErrorConditionsTransfer())
                     ->addIdImportJobRun($run1->getIdImportJobRun()),
-            );
+            )
+            ->setPagination((new PaginationTransfer())->setLimit(static::LIMIT));
 
         // Act
         $errorCollection = $this->tester->getFacade()->getImportJobRunErrorCollection($criteriaTransfer);

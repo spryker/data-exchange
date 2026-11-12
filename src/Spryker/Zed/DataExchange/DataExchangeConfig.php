@@ -109,6 +109,8 @@ class DataExchangeConfig extends AbstractBundleConfig
      */
     protected const int IMPORT_ERROR_DISPLAY_THRESHOLD = 10;
 
+    protected const int IMPORT_ERROR_EXPORT_BATCH_SIZE = 1000;
+
     /**
      * Specification:
      * - Defines the default MIME content type used when storing import files without an explicit type.
@@ -150,6 +152,20 @@ class DataExchangeConfig extends AbstractBundleConfig
      * - Defines the time zone in which import job run lease timestamps are written and compared.
      */
     protected const string IMPORT_JOB_RUN_LEASE_TIME_ZONE = 'UTC';
+
+    /**
+     * Specification:
+     * - Defines how many days a finished or never completed import job run is kept before `import:job:prune` deletes it.
+     */
+    protected const int IMPORT_JOB_RUN_RETENTION_IN_DAYS = 90;
+
+    protected const string CONFIGURATION_KEY_DATA_EXCHANGE_IMPORT_JOB_RUNS_RETENTION_IN_DAYS = 'data_exchange:import:job_runs:retention_in_days';
+
+    /**
+     * Specification:
+     * - Defines how many import job runs `import:job:prune` reads per batch.
+     */
+    protected const int IMPORT_JOB_RUN_PRUNE_BATCH_SIZE = 100;
 
     /**
      * Specification:
@@ -220,6 +236,24 @@ class DataExchangeConfig extends AbstractBundleConfig
     public function getImportStatusImportedWithErrors(): string
     {
         return static::IMPORT_STATUS_IMPORTED_WITH_ERRORS;
+    }
+
+    /**
+     * Specification:
+     * - Returns the status values of an import job run that has finished: done, imported with errors and failed.
+     * - A run in one of these statuses is never processed again.
+     *
+     * @api
+     *
+     * @return list<string>
+     */
+    public function getFinishedImportStatuses(): array
+    {
+        return [
+            static::IMPORT_STATUS_DONE,
+            static::IMPORT_STATUS_IMPORTED_WITH_ERRORS,
+            static::IMPORT_STATUS_FAILED,
+        ];
     }
 
     /**
@@ -326,6 +360,18 @@ class DataExchangeConfig extends AbstractBundleConfig
 
     /**
      * Specification:
+     * - Returns the number of import errors read per query when the errors CSV of a job run is downloaded.
+     * - The CSV contains all errors of the run; a lower value lowers the memory per query, a higher value lowers the number of queries.
+     *
+     * @api
+     */
+    public function getImportErrorExportBatchSize(): int
+    {
+        return static::IMPORT_ERROR_EXPORT_BATCH_SIZE;
+    }
+
+    /**
+     * Specification:
      * - Returns the default MIME content type used when storing import files without an explicit type.
      *
      * @api
@@ -415,5 +461,35 @@ class DataExchangeConfig extends AbstractBundleConfig
     public function getImportJobRunLeaseTimeZone(): string
     {
         return static::IMPORT_JOB_RUN_LEASE_TIME_ZONE;
+    }
+
+    /**
+     * Specification:
+     * - Returns how many days a done, imported with errors, failed or receiving import job run is kept after its last update.
+     * - `import:job:prune` deletes older runs together with their stored file and their errors.
+     * - Pending and processing runs are never deleted, whatever this value is.
+     * - Must be at least 1; `import:job:prune` throws an exception and deletes nothing otherwise.
+     * - Configurable in the Back Office; falls back to 90 days when no value is set.
+     *
+     * @api
+     */
+    public function getImportJobRunRetentionInDays(): int
+    {
+        return (int)$this->getModuleConfig(
+            static::CONFIGURATION_KEY_DATA_EXCHANGE_IMPORT_JOB_RUNS_RETENTION_IN_DAYS,
+            static::IMPORT_JOB_RUN_RETENTION_IN_DAYS,
+        );
+    }
+
+    /**
+     * Specification:
+     * - Returns how many import job runs `import:job:prune` reads per batch; it reads batches until none is left.
+     * - Must be at least 1; `import:job:prune` throws an exception and deletes nothing otherwise.
+     *
+     * @api
+     */
+    public function getImportJobRunPruneBatchSize(): int
+    {
+        return static::IMPORT_JOB_RUN_PRUNE_BATCH_SIZE;
     }
 }
