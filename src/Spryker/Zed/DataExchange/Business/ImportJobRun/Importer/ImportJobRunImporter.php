@@ -83,8 +83,6 @@ class ImportJobRunImporter implements ImportJobRunImporterInterface
             }
         }
 
-        $this->triggerCollectedPublishEvents($importResult->getPublishEvents());
-
         if ($importResult->getIsLeaseLostOrFail()) {
             return false;
         }
@@ -243,8 +241,8 @@ class ImportJobRunImporter implements ImportJobRunImporterInterface
     }
 
     /**
-     * Runs one batch through every step, folds its counters, row errors and publish events into the running result
-     * and resets the step caches. Only the deduplicated publish events are kept until the end of the run.
+     * Runs one batch through every step, folds its counters and row errors into the running result, triggers the
+     * deduplicated publish events of the batch and resets the step caches.
      *
      * @param array<int, array<string, string>> $batch
      * @param array<\Spryker\Zed\DataExchangeExtension\Dependency\Plugin\ImportStepInterface> $steps
@@ -252,6 +250,9 @@ class ImportJobRunImporter implements ImportJobRunImporterInterface
     protected function processBatch(array $batch, int $idImportJobRun, array $steps, ImportJobRunImportResultTransfer $importResult): void
     {
         $this->executeBatch($batch, $idImportJobRun, $steps, $importResult);
+
+        $this->triggerCollectedPublishEvents($importResult->getPublishEvents());
+        $importResult->setPublishEvents([]);
 
         $this->resetStepsCaches($steps);
     }

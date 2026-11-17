@@ -9,9 +9,11 @@ declare(strict_types=1);
 
 namespace SprykerTest\Zed\DataExchange\Business\Facade;
 
+use ArrayObject;
 use Codeception\Test\Unit;
 use DateTime;
 use DateTimeZone;
+use Generated\Shared\Transfer\EventEntityTransfer;
 use Generated\Shared\Transfer\ImportJobRunCollectionTransfer;
 use Generated\Shared\Transfer\ImportJobRunConditionsTransfer;
 use Generated\Shared\Transfer\ImportJobRunCriteriaTransfer;
@@ -20,6 +22,7 @@ use Generated\Shared\Transfer\ImportJobRunErrorCriteriaTransfer;
 use Generated\Shared\Transfer\ImportJobRunErrorTransfer;
 use Generated\Shared\Transfer\ImportJobRunTransfer;
 use Generated\Shared\Transfer\ImportJobTransfer;
+use Generated\Shared\Transfer\ImportPublishEventTransfer;
 use Generated\Shared\Transfer\ImportStepResponseTransfer;
 use Generated\Shared\Transfer\PaginationTransfer;
 use Orm\Zed\DataExchange\Persistence\Map\SpyImportJobRunTableMap;
@@ -83,6 +86,8 @@ class ProcessNextPendingRunTest extends Unit
 
     protected const string TIME_ZONE_AHEAD_OF_LEASE_TIME_ZONE = 'Pacific/Kiritimati';
 
+    protected const int ID_ENTITY_TOUCHED_BY_EVERY_ROW = 42;
+
     protected const array CLAIMED_COLUMNS = ['status', 'claimed_by', 'lease_expires_at', 'attempt_count', 'import_started_at'];
 
     protected DataExchangeBusinessTester $tester;
@@ -92,9 +97,9 @@ class ProcessNextPendingRunTest extends Unit
     protected DemoCsvImportStep $demoStep;
 
     /**
-     * @var array<string, array<\Generated\Shared\Transfer\EventEntityTransfer>>
+     * @var array<int, array{eventName: string, entityIds: array<int>, numberOfBatchesImportedByTheDemoStep: int}>
      */
-    protected array $triggeredEvents = [];
+    protected array $triggerBulkCalls = [];
 
     protected function setUp(): void
     {
@@ -102,13 +107,17 @@ class ProcessNextPendingRunTest extends Unit
 
         $this->rootDirectory = $this->tester->configureLocalFileSystems();
         $this->demoStep = new DemoCsvImportStep();
-        $this->triggeredEvents = [];
+        $this->triggerBulkCalls = [];
 
         $this->registerSchemaPlugin([$this->demoStep]);
 
         $eventFacadeMock = $this->createMock(EventFacadeInterface::class);
         $eventFacadeMock->method('triggerBulk')->willReturnCallback(function (string $eventName, array $transfers): void {
-            $this->triggeredEvents[$eventName] = $transfers;
+            $this->triggerBulkCalls[] = [
+                'eventName' => $eventName,
+                'entityIds' => array_map(static fn (EventEntityTransfer $eventEntityTransfer): int => $eventEntityTransfer->getIdOrFail(), $transfers),
+                'numberOfBatchesImportedByTheDemoStep' => count($this->demoStep->getReceivedBatches()),
+            ];
         });
         $this->tester->setDependency(DataExchangeDependencyProvider::FACADE_EVENT, $eventFacadeMock);
     }
@@ -149,8 +158,10 @@ class ProcessNextPendingRunTest extends Unit
             [['sku' => 'sku', 'name.de_de' => 'name.de-DE']],
             $this->demoStep->getReceivedPropertyNamesInFile(),
         );
-        $this->assertArrayHasKey(DemoCsvImportStep::EVENT_NAME, $this->triggeredEvents);
-        $this->assertCount(3, $this->triggeredEvents[DemoCsvImportStep::EVENT_NAME]);
+        $this->assertSame(
+            [$this->createExpectedTriggerBulkCall([2, 3, 4], 1)],
+            $this->triggerBulkCalls,
+        );
         $this->assertFalse(EventBehaviorConfig::isEventBehaviorDisabled());
     }
 
@@ -820,9 +831,7 @@ class ProcessNextPendingRunTest extends Unit
         $numberOfExecutedBatches = 0;
         $this->registerSchemaPlugin([$this->createStepRunningBeforeEachBatch(function () use ($idImportJobRun, &$numberOfExecutedBatches): void {
             $numberOfExecutedBatches++;
-            SpyImportJobRunQuery::create()
-                ->filterByIdImportJobRun($idImportJobRun)
-                ->update(['ClaimedBy' => static::LIVE_WORKER]);
+            $this->takeOverTheClaimAsTheLiveWorker($idImportJobRun);
         })]);
         $postProcessorMock = $this->createMock(ImportPostProcessorPluginInterface::class);
         $postProcessorMock->expects($this->never())->method('postProcess');
@@ -904,9 +913,7 @@ class ProcessNextPendingRunTest extends Unit
         $importJobRunTransfer = $this->tester->havePendingImportJobRunWithCsvFile($this->rootDirectory, [['sku'], ['sku-1']]);
         $idImportJobRun = $importJobRunTransfer->getIdImportJobRunOrFail();
         $this->registerSchemaPlugin([$this->createStepRunningBeforeEachBatch(function () use ($idImportJobRun): void {
-            SpyImportJobRunQuery::create()
-                ->filterByIdImportJobRun($idImportJobRun)
-                ->update(['ClaimedBy' => static::LIVE_WORKER]);
+            $this->takeOverTheClaimAsTheLiveWorker($idImportJobRun);
 
             throw new RuntimeException('Step exploded.');
         })]);
@@ -943,6 +950,117 @@ class ProcessNextPendingRunTest extends Unit
             'Each reset drops only the lookups of the batch just processed: without the reset the cache would hold 2, 4 and 5 entries',
         );
         $this->assertSame([], $this->demoStep->getLookupCache(), 'No lookup survives the last batch');
+    }
+
+    public function testTriggersThePublishEventsOfEachBatchBeforeTheNextBatchIsImported(): void
+    {
+        // Arrange
+        $this->tester->mockConfigMethod('getImportCsvBatchSize', 2);
+        $this->tester->havePendingImportJobRunWithCsvFile($this->rootDirectory, [['sku'], ['sku-1'], ['sku-2'], ['sku-3'], ['sku-4'], ['sku-5']]);
+
+        // Act
+        $this->tester->getFacade()->processNextPendingRun();
+
+        // Assert
+        $this->assertSame(
+            [
+                $this->createExpectedTriggerBulkCall([2, 3], 1),
+                $this->createExpectedTriggerBulkCall([4, 5], 2),
+                $this->createExpectedTriggerBulkCall([6], 3),
+            ],
+            $this->triggerBulkCalls,
+        );
+    }
+
+    public function testPublishesAnEntityOncePerBatchThatTouchedIt(): void
+    {
+        // Arrange
+        $this->tester->mockConfigMethod('getImportCsvBatchSize', 2);
+        $this->registerSchemaPlugin([$this->createStepPublishingOneEntityForEveryRow(static::ID_ENTITY_TOUCHED_BY_EVERY_ROW)]);
+        $this->tester->havePendingImportJobRunWithCsvFile($this->rootDirectory, [['sku'], ['sku-1'], ['sku-2'], ['sku-3'], ['sku-4']]);
+
+        // Act
+        $this->tester->getFacade()->processNextPendingRun();
+
+        // Assert
+        $this->assertSame(
+            [
+                $this->createExpectedTriggerBulkCall([static::ID_ENTITY_TOUCHED_BY_EVERY_ROW], 1),
+                $this->createExpectedTriggerBulkCall([static::ID_ENTITY_TOUCHED_BY_EVERY_ROW], 2),
+            ],
+            $this->triggerBulkCalls,
+        );
+    }
+
+    public function testPublishesTheEventsOfTheBatchesImportedBeforeAStepThrew(): void
+    {
+        // Arrange
+        $this->tester->mockConfigMethod('getImportCsvBatchSize', 2);
+        $importJobRunTransfer = $this->tester->havePendingImportJobRunWithCsvFile(
+            $this->rootDirectory,
+            [['sku'], ['sku-1'], ['sku-2'], [DemoCsvImportStep::THROWING_SKU_PREFIX . '3']],
+        );
+
+        // Act
+        $this->tester->getFacade()->processNextPendingRun();
+
+        // Assert
+        $this->assertSame(
+            [$this->createExpectedTriggerBulkCall([2, 3], 1)],
+            $this->triggerBulkCalls,
+        );
+        $this->assertSame(DataExchangeBusinessTester::STATUS_FAILED, $this->findRun($importJobRunTransfer->getIdImportJobRunOrFail())->getStatus());
+    }
+
+    public function testPublishesTheEventsOfTheBatchDuringWhichAnotherWorkerTookOverTheClaim(): void
+    {
+        // Arrange
+        $this->tester->mockConfigMethod('getImportCsvBatchSize', 1);
+        $importJobRunTransfer = $this->tester->havePendingImportJobRunWithCsvFile($this->rootDirectory, [['sku'], ['sku-1'], ['sku-2'], ['sku-3']]);
+        $idImportJobRun = $importJobRunTransfer->getIdImportJobRunOrFail();
+        $this->registerSchemaPlugin([$this->createStepTakingOverTheClaimDuringBatch(2, $idImportJobRun)]);
+
+        // Act
+        $this->tester->getFacade()->processNextPendingRun();
+
+        // Assert
+        $this->assertSame(
+            [
+                $this->createExpectedTriggerBulkCall([2], 1),
+                $this->createExpectedTriggerBulkCall([3], 2),
+            ],
+            $this->triggerBulkCalls,
+        );
+    }
+
+    /**
+     * @dataProvider provideBatchSizesOfAMultiBatchAndASingleBatchRun
+     */
+    public function testPublishesEveryImportedEntityExactlyOnceWhateverTheBatchSize(int $batchSize): void
+    {
+        // Arrange
+        $this->tester->mockConfigMethod('getImportCsvBatchSize', $batchSize);
+        $this->tester->havePendingImportJobRunWithCsvFile(
+            $this->rootDirectory,
+            [['sku'], ['sku-1'], [DemoCsvImportStep::FAILING_SKU_PREFIX . '2'], ['sku-3'], ['sku-4'], ['sku-5']],
+        );
+
+        // Act
+        $this->tester->getFacade()->processNextPendingRun();
+
+        // Assert
+        $this->assertSame([2, 4, 5, 6], array_merge(...array_column($this->triggerBulkCalls, 'entityIds')));
+    }
+
+    /**
+     * @return array<string, array{int}>
+     */
+    public static function provideBatchSizesOfAMultiBatchAndASingleBatchRun(): array
+    {
+        return [
+            'several batches' => [2],
+            'one batch' => [1000],
+        ];
     }
 
     public function testRunsAStepWithoutCacheResetSupportUnchanged(): void
@@ -1113,9 +1231,7 @@ class ProcessNextPendingRunTest extends Unit
             $numberOfExecutedBatches++;
 
             if ($numberOfExecutedBatches === 2) {
-                SpyImportJobRunQuery::create()
-                    ->filterByIdImportJobRun($idImportJobRun)
-                    ->update(['ClaimedBy' => static::LIVE_WORKER]);
+                $this->takeOverTheClaimAsTheLiveWorker($idImportJobRun);
             }
         })]);
 
@@ -1188,6 +1304,7 @@ class ProcessNextPendingRunTest extends Unit
         $importJobRun = $this->findRun($importJobRun->getIdImportJobRunOrFail());
         $this->assertSame(DataExchangeBusinessTester::STATUS_FAILED, $importJobRun->getStatus());
         $this->assertSame(2, $importJobRun->getNumberOfFailedLines());
+        $this->assertSame([], $this->triggerBulkCalls);
     }
 
     public function testMarksTheRunImportedWithErrorsWhenAFailedBatchIsFollowedByASuccessfulBatch(): void
@@ -1335,7 +1452,7 @@ class ProcessNextPendingRunTest extends Unit
         $this->assertNotNull($importJobRun->getImportFinishedAt());
         $this->assertFalse(EventBehaviorConfig::isEventBehaviorDisabled(), 'Events must be re-enabled even when the import throws');
         $this->assertTrue(Propel::isInstancePoolingEnabled(), 'Instance pooling must be restored even when the import throws');
-        $this->assertSame([], $this->triggeredEvents);
+        $this->assertSame([], $this->triggerBulkCalls);
 
         $errors = $this->findErrors($importJobRun->getIdImportJobRunOrFail());
         $this->assertCount(1, $errors);
@@ -1435,6 +1552,57 @@ class ProcessNextPendingRunTest extends Unit
         });
 
         return $step;
+    }
+
+    protected function createStepTakingOverTheClaimDuringBatch(int $batchNumber, int $idImportJobRun): ImportStepInterface
+    {
+        $numberOfExecutedBatches = 0;
+
+        return $this->createStepRunningBeforeEachBatch(function () use ($batchNumber, $idImportJobRun, &$numberOfExecutedBatches): void {
+            $numberOfExecutedBatches++;
+
+            if ($numberOfExecutedBatches !== $batchNumber) {
+                return;
+            }
+
+            $this->takeOverTheClaimAsTheLiveWorker($idImportJobRun);
+        });
+    }
+
+    /**
+     * @param array<int> $entityIds
+     *
+     * @return array{eventName: string, entityIds: array<int>, numberOfBatchesImportedByTheDemoStep: int}
+     */
+    protected function createExpectedTriggerBulkCall(array $entityIds, int $numberOfBatchesImportedByTheDemoStep): array
+    {
+        return [
+            'eventName' => DemoCsvImportStep::EVENT_NAME,
+            'entityIds' => $entityIds,
+            'numberOfBatchesImportedByTheDemoStep' => $numberOfBatchesImportedByTheDemoStep,
+        ];
+    }
+
+    protected function createStepPublishingOneEntityForEveryRow(int $idEntity): ImportStepInterface
+    {
+        $step = $this->createMock(ImportStepInterface::class);
+        $step->method('executeBatch')->willReturnCallback(function (array $batch, array $propertyNamesInFile) use ($idEntity): ImportStepResponseTransfer {
+            $this->demoStep->executeBatch($batch, $propertyNamesInFile);
+            $importPublishEventTransfer = (new ImportPublishEventTransfer())->setEventName(DemoCsvImportStep::EVENT_NAME)->setEntityId($idEntity);
+
+            return (new ImportStepResponseTransfer())
+                ->setIsSuccessful(true)
+                ->setPublishEvents(new ArrayObject(array_fill(0, count($batch), $importPublishEventTransfer)));
+        });
+
+        return $step;
+    }
+
+    protected function takeOverTheClaimAsTheLiveWorker(int $idImportJobRun): void
+    {
+        SpyImportJobRunQuery::create()
+            ->filterByIdImportJobRun($idImportJobRun)
+            ->update(['ClaimedBy' => static::LIVE_WORKER]);
     }
 
     protected function finishRunAsTheLiveWorker(int $idImportJobRun): void
